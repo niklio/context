@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- context: messages distilled into a portable profile -->
+  <!-- context: serif monogram — a record of you. c in Georgia, blue period. -->
   <defs>
     <clipPath id="squircle">
       <rect width="1024" height="1024" rx="232"/>
@@ -7,26 +7,9 @@
   </defs>
   <g clip-path="url(#squircle)">
     <rect width="1024" height="1024" fill="#faf6ec"/>
-    <!-- back layer cards, peeking out: the "layers" of context -->
-    <rect x="292" y="214" width="440" height="560" rx="96" fill="#e7dcc2"/>
-    <rect x="252" y="254" width="520" height="560" rx="96" fill="#2b2620" opacity="0.12"/>
-    <!-- speech bubble -->
-    <path d="M212 390
-             a96 96 0 0 1 96-96
-             h408
-             a96 96 0 0 1 96 96
-             v248
-             a96 96 0 0 1 -96 96
-             h-236
-             l-124 116
-             a20 20 0 0 1 -34 -14.6
-             v-101.4
-             h-14
-             a96 96 0 0 1 -96 -96
-             z"
-          fill="#2b2620"/>
-    <!-- message lines -->
-    <rect x="316" y="404" width="392" height="52" rx="26" fill="#faf6ec"/>
-    <rect x="316" y="500" width="272" height="52" rx="26" fill="#0071e3"/>
+    <text x="490" y="760" font-family="Georgia, 'Times New Roman', serif"
+          font-size="820" font-weight="700" text-anchor="middle"
+          fill="#2b2620">c</text>
+    <circle cx="770" cy="702" r="58" fill="#0a7bf5"/>
   </g>
 </svg>
