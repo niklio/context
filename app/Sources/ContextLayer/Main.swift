@@ -9,6 +9,10 @@ enum Entry {
             Headless.run()
             return
         }
+        if CommandLine.arguments.contains("--snapshot") {
+            MainActor.assumeIsolated { Snapshot.run() }
+            return
+        }
         ContextLayerApp.main()
     }
 }
