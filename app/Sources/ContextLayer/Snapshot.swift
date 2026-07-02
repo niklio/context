@@ -43,6 +43,10 @@ enum Snapshot {
         }
 
         state("01-grant") { $0.stage = .needsGrant }
+        state("01b-access-lost") { m in
+            m.stage = .accessLost
+            m.profile = sampleProfile
+        }
         state("02-building-download") { m in
             m.stage = .building
             m.progress = 0.28

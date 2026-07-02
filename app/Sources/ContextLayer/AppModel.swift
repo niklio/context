@@ -3,6 +3,7 @@ import SwiftUI
 
 enum Stage: Equatable {
     case needsGrant
+    case accessLost     // had access, lost it (macOS update, toggle flipped)
     case building
     case ready          // built, never published
     case live           // published; mode governs how updates flow
@@ -83,18 +84,23 @@ final class AppModel: ObservableObject {
         startGrantPolling()
     }
 
-    /// FDA can't be prompted for; poll, and the moment it flips go straight
-    /// to building — granting access IS the start button.
+    /// FDA can't be prompted for; poll, and the moment it flips resume on our
+    /// own — granting access IS the start button.
     private func startGrantPolling() {
         grantTimer?.invalidate()
         grantTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, case .needsGrant = self.stage else {
-                    self?.grantTimer?.invalidate(); return
-                }
+                guard let self else { return }
+                let waiting = self.stage == .needsGrant || self.stage == .accessLost
+                guard waiting else { self.grantTimer?.invalidate(); return }
                 if ChatDB.canRead(path: self.dbPath) {
                     self.grantTimer?.invalidate()
-                    self.start()
+                    if self.stage == .accessLost, !self.profile.isEmpty {
+                        // Access restored: pick up where we left off.
+                        self.stage = self.publishedURL != nil ? .live : .ready
+                    } else {
+                        self.start()
+                    }
                 }
             }
         }
@@ -128,7 +134,12 @@ final class AppModel: ObservableObject {
                 stage = .ready
             } catch {
                 stopFactRotation()
-                stage = .failed(error.localizedDescription)
+                if case ChatDBError.notReadable = error {
+                    stage = .accessLost
+                    startGrantPolling()
+                } else {
+                    stage = .failed(error.localizedDescription)
+                }
             }
         }
     }
@@ -286,6 +297,14 @@ final class AppModel: ObservableObject {
     }
 
     private func maybeRebuild() {
+        // Detect revoked access from the resting states and surface recovery
+        // guidance instead of failing generically later.
+        if (stage == .live || stage == .ready || stage == .updatePending),
+           !ChatDB.canRead(path: dbPath) {
+            stage = .accessLost
+            startGrantPolling()
+            return
+        }
         guard !rebuilding,
               stage == .live,   // don't stack on pending/ building/ failed
               ChatDB.canRead(path: dbPath),

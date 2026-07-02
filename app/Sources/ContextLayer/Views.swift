@@ -9,6 +9,7 @@ struct MenuContent: View {
             header
             switch model.stage {
             case .needsGrant: grantView
+            case .accessLost: accessLostView
             case .building: buildingView
             case .ready: readyView
             case .live: liveView
@@ -52,8 +53,8 @@ struct MenuContent: View {
                 Divider()
                 Button("Quit Context") { NSApp.terminate(nil) }
             } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12.5, weight: .light))
                     .foregroundStyle(Theme.ink)   // match header text; menu styles override subtler colors
             }
             .menuStyle(.button)
@@ -67,27 +68,83 @@ struct MenuContent: View {
     // MARK: - Grant
 
     private var grantView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
-                step(1, Text("Open the button below"))
-                step(2, Text("Turn on ") + Text("Context").bold() + Text(" in the list"))
-                step(3, Text("Come back — it starts on its own"))
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                step(1, Text("Click ") + Text("Open Full Disk Access Settings").bold()
+                        + Text(" below"))
+                step(2, Text("Find ") + Text("Context").bold()
+                        + Text(" in the list and flip it on. Not there? Click ")
+                        + keycap("+") + Text(" and pick it from Applications"))
+                step(3, Text("Come straight back — Context starts on its own"))
             }
-            .padding(.bottom, 4)
+            .padding(.bottom, 16)
             Button("Open Full Disk Access Settings") { model.openFullDiskAccessSettings() }
                 .buttonStyle(PrimaryButtonStyle())
+            waitingHint(
+                "Waiting for access… macOS requires you to flip this switch yourself; Context can't do it for you. Your messages never leave this Mac.")
+        }
+    }
+
+    private var accessLostView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.orange)
+                    .padding(.top, 2)
+                (Text("Context lost access to Messages. ").bold()
+                    + Text("This usually happens after a macOS update or if the toggle was switched off."))
+                    .font(.system(size: 12.5))
+            }
+            .foregroundStyle(Color(hex: 0x7A5A34))
+            .padding(10)
+            .background(Color(hex: 0xF7EAD9), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9)
+                .stroke(Color(hex: 0xECD3B3), lineWidth: 1.5))
+            .padding(.bottom, 13)
+
+            VStack(alignment: .leading, spacing: 14) {
+                step(1, Text("Click ") + Text("Open Full Disk Access Settings").bold()
+                        + Text(" below"))
+                step(2, Text("Find ") + Text("Context").bold()
+                        + Text(" and flip it back on. Already on? Flip it off and on again"))
+                step(3, Text("Come back — updates resume, your profile and link are untouched"))
+            }
+            .padding(.bottom, 16)
+            Button("Open Full Disk Access Settings") { model.openFullDiskAccessSettings() }
+                .buttonStyle(PrimaryButtonStyle())
+            waitingHint("Watching for access to come back…")
         }
     }
 
     private func step(_ n: Int, _ label: Text) -> some View {
-        HStack(spacing: 9) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("\(n)")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 18, height: 18)
                 .background(Theme.blue, in: Circle())
-            label.font(.system(size: 14))
+            label
+                .font(.system(size: 13.5))
+                .lineSpacing(2.5)
+                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func keycap(_ s: String) -> Text {
+        Text(s).bold().foregroundColor(Theme.ink)
+    }
+
+    private func waitingHint(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 5) {
+            Circle().fill(Theme.blue).frame(width: 7, height: 7)
+                .padding(.top, 3.5)
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 9)
     }
 
     // MARK: - Building
