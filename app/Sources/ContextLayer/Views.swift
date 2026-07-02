@@ -53,10 +53,11 @@ struct MenuContent: View {
                 Button("Quit Context") { NSApp.terminate(nil) }
             } label: {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.ink)   // match header text; menu styles override subtler colors
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Settings")
