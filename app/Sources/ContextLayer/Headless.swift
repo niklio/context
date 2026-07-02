@@ -19,7 +19,7 @@ enum Headless {
         do {
             print("extracting from \(dbPath) …")
             let result = try ChatDB.extract(path: dbPath)
-            let stats = CorpusStats.compute(result)
+            let stats = CorpusStats.compute(result, names: Contacts.nameMap())
             print("  \(result.chats.count) chats, "
                 + "\(stats.totalMessages) messages, "
                 + "\(result.recoveredFromBlob) texts recovered from attributedBody")

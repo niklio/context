@@ -16,15 +16,16 @@ export default {
     const url = new URL(request.url);
 
     // Releases live in R2 (too big for static assets).
-    const zip = url.pathname.match(/^\/((?:ContextLayer|Context)-[\w.]+\.zip)$/);
-    if (zip) {
-      const obj = await env.RELEASES.get(zip[1]);
+    const rel = url.pathname.match(/^\/((?:ContextLayer|Context)-[\w.]+\.(zip|dmg))$/);
+    if (rel) {
+      const obj = await env.RELEASES.get(rel[1]);
       if (!obj) return new Response("not found", { status: 404 });
       return new Response(obj.body, {
         headers: {
-          "content-type": "application/zip",
+          "content-type": rel[2] === "dmg"
+            ? "application/x-apple-diskimage" : "application/zip",
           "content-length": obj.size,
-          "content-disposition": `attachment; filename="${zip[1]}"`,
+          "content-disposition": `attachment; filename="${rel[1]}"`,
           "cache-control": "public, max-age=3600",
         },
       });

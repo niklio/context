@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 @main
@@ -19,6 +20,16 @@ enum Entry {
 
 struct ContextLayerApp: App {
     @StateObject private var model = AppModel()
+
+    init() {
+        // Start at login. Registered once; users can disable it anytime in
+        // System Settings → General → Login Items. Skip for the bare dev
+        // binary — only a real .app bundle can be a login item.
+        if Bundle.main.bundlePath.hasSuffix(".app"),
+           SMAppService.mainApp.status == .notRegistered {
+            try? SMAppService.mainApp.register()
+        }
+    }
 
     /// The "c." logo mark as a template image: monochrome ink that the system
     /// recolors for light/dark menu bars and highlight states.

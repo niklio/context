@@ -42,7 +42,8 @@ struct CorpusStats {
         return lines
     }
 
-    static func compute(_ result: ExtractionResult) -> CorpusStats {
+    static func compute(_ result: ExtractionResult,
+                        names: [String: String] = [:]) -> CorpusStats {
         var total = 0, sent = 0, tapbacks = 0
         var first: Date?, last: Date?
         var hourCounts = [Int](repeating: 0, count: 24)
@@ -63,7 +64,11 @@ struct CorpusStats {
                 }
             }
             if !chat.isGroup {
-                let name = chat.displayName ?? chat.identifier
+                // Facts surface in the UI — always prefer a real name over
+                // a raw handle.
+                let name = chat.displayName
+                    ?? Contacts.resolve(chat.identifier, in: names)
+                    ?? chat.identifier
                 contactVolume[name, default: 0] += chat.messages.count
             }
         }

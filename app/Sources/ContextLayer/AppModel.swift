@@ -157,7 +157,7 @@ final class AppModel: ObservableObject {
         let result = try await Task.detached(priority: .userInitiated) {
             try ChatDB.extract(path: path)
         }.value
-        let stats = CorpusStats.compute(result)
+        let stats = CorpusStats.compute(result, names: Contacts.nameMap())
         await MainActor.run { [weak self] in
             guard let self else { return }
             self.facts = stats.headlines
