@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION=0.2.1
+VERSION=0.2.2
 
 ./vendor/fetch-ollama.sh
 
@@ -28,13 +28,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>Context Layer</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>3</string>
+    <key>CFBundleVersion</key><string>4</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHumanReadableCopyright</key><string>Local-first. Raw messages never leave this Mac.</string>
 </dict>
+</plist>
 PLIST
+
+plutil -lint "$APP/Contents/Info.plist"
 
 # Ad-hoc signature: stable identity so the Full Disk Access grant survives
 # rebuilds on the same machine. Real Developer ID signing comes later.
