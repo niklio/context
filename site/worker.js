@@ -1,4 +1,15 @@
 const MAX_PROFILE_BYTES = 100_000;
+const UNCLAIMED_TTL_S = 30 * 24 * 3600; // unclaimed profiles self-delete in 30d
+
+function randomHex(bytes) {
+  return [...crypto.getRandomValues(new Uint8Array(bytes))]
+    .map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export default {
   async fetch(request, env) {
@@ -19,19 +30,46 @@ export default {
       });
     }
 
-    // Profile upload from the Mac app.
+    // First upload from the Mac app. Returns a write-token so the app can
+    // keep re-publishing the same profile (auto-update) before any account
+    // exists; account creation later claims the id without touching the token.
     if (url.pathname === "/api/profiles" && request.method === "POST") {
       let body;
       try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
       const profile = typeof body.profile === "string" ? body.profile.trim() : "";
       if (!profile) return json({ error: "empty profile" }, 400);
       if (profile.length > MAX_PROFILE_BYTES) return json({ error: "profile too large" }, 413);
-      const id = crypto.randomUUID().replaceAll("-", "")
-        + crypto.randomUUID().replaceAll("-", "").slice(0, 8); // 160-bit unguessable
+      const id = randomHex(20);          // 160-bit unguessable view link
+      const token = randomHex(32);       // 256-bit write credential
       await env.PROFILES.put(id, JSON.stringify({
-        profile, created: new Date().toISOString(),
-      }));
-      return json({ id, url: `${url.origin}/p/${id}` });
+        profile,
+        tokenHash: await sha256(token),
+        created: new Date().toISOString(),
+        updated: new Date().toISOString(),
+      }), { expirationTtl: UNCLAIMED_TTL_S });
+      return json({ id, url: `${url.origin}/p/${id}`, token });
+    }
+
+    // Re-publish (auto-update / approved update) — requires the write-token.
+    const put = url.pathname.match(/^\/api\/profiles\/([a-f0-9]{30,50})$/);
+    if (put && request.method === "PUT") {
+      const stored = await env.PROFILES.get(put[1]);
+      if (!stored) return json({ error: "not found" }, 404);
+      const record = JSON.parse(stored);
+      const token = (request.headers.get("authorization") || "").replace(/^Bearer /, "");
+      if (!token || (await sha256(token)) !== record.tokenHash) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+      const profile = typeof body.profile === "string" ? body.profile.trim() : "";
+      if (!profile) return json({ error: "empty profile" }, 400);
+      if (profile.length > MAX_PROFILE_BYTES) return json({ error: "profile too large" }, 413);
+      record.profile = profile;
+      record.updated = new Date().toISOString();
+      await env.PROFILES.put(put[1], JSON.stringify(record),
+        { expirationTtl: UNCLAIMED_TTL_S });
+      return json({ ok: true });
     }
 
     // Profile deletion (the id itself is the bearer secret).

@@ -3,9 +3,27 @@ import SwiftUI
 
 /// Dev tool: render every UI state to PNGs without a display.
 ///   ContextLayer --snapshot [outdir]
-/// Used for design review; states are staged with representative data.
 @MainActor
 enum Snapshot {
+    static let sampleProfile = """
+    # Your Profile
+
+    ## Life context
+    You live in NYC and work as a PM on AI personalization, and you're deep \
+    in baby-registry research.
+
+    ## Communication style
+    Your texting is dry, lowercase, and direct — you reply with data and \
+    links, not opinions.
+
+    ## Relationships
+    You coordinate household logistics with your partner and protect weekend \
+    mornings for long rides with training friends.
+
+    ## Interests
+    Triathlon training, AI benchmarks, home automation.
+    """
+
     static func run() {
         let args = CommandLine.arguments
         let outDir = args.indices.contains(2) && !args[2].hasPrefix("-")
@@ -17,72 +35,68 @@ enum Snapshot {
         app.setActivationPolicy(.accessory)
         NSApp.appearance = NSAppearance(named: .aqua)
 
-        let sampleProfile = """
-        # Your Profile
-
-        ## Life context
-        You live in NYC and work as a product manager on AI personalization. \
-        You're expecting a baby and are deep in registry research mode.
-
-        ## Communication style
-        Dry, direct, lowercase in casual threads. You answer questions with \
-        data and links rather than opinions.
-
-        ## Relationships
-        You coordinate household logistics with your partner and keep a \
-        tight group of training friends.
-
-        ## Interests
-        Triathlon training, AI benchmarks, home automation.
-        """
-
         var states: [(String, AppModel)] = []
         func state(_ name: String, _ configure: (AppModel) -> Void) {
             let m = AppModel()
-            m.stage = .needsGrant   // neutral before configure (init may auto-start)
             configure(m)
             states.append((name, m))
         }
 
-        state("1-grant") { $0.stage = .needsGrant }
-        state("2-building-download") { m in
+        state("01-grant") { $0.stage = .needsGrant }
+        state("02-building-download") { m in
             m.stage = .building
-            m.progress = 0.29
+            m.progress = 0.28
             m.statusText = "Downloading the local model…"
-            m.etaText = "~2 min left"
+            m.etaText = "~2 min"
             m.currentFact = "142,318 messages across 9.4 years of history"
         }
-        state("3-building-distill") { m in
+        state("03-building-distill") { m in
             m.stage = .building
             m.progress = 0.81
             m.statusText = "Distilling your profile…"
-            m.etaText = "~40s left"
+            m.etaText = "~40s"
             m.currentFact = "You plan long weekend rides with a tight group of training friends"
         }
-        state("4-ready-upload") { m in
-            m.stage = .review
+        state("04-ready") { m in
+            m.stage = .ready
             m.profile = sampleProfile
-            m.publishedURL = nil
+            m.mode = .auto
         }
-        state("5-ready-linked") { m in
-            m.stage = .review
+        state("05-live-auto") { m in
+            m.stage = .live
             m.profile = sampleProfile
+            m.mode = .auto
+            m.publishedURL = "https://context.nikliolios.com/p/63f6327db8c84a19b749e55ee15cc9"
+            m.lastPublished = Date(timeIntervalSinceNow: -120)
+        }
+        state("06-update-pending") { m in
+            m.stage = .updatePending
+            m.profile = sampleProfile
+            m.pendingProfile = sampleProfile.replacingOccurrences(
+                of: "Triathlon training",
+                with: "Half-Ironman training (this fall!)")
+            m.newInsightCount = 3
+            m.mode = .manual
+        }
+        state("07-live-manual") { m in
+            m.stage = .live
+            m.profile = sampleProfile
+            m.mode = .manual
             m.publishedURL = "https://context.nikliolios.com/p/63f6327db8c84a19b749e55ee15cc9"
         }
-        state("6-failed") { m in
+        state("08-failed") { m in
             m.stage = .failed("Upload failed: the network connection was lost. Your profile is safe on this Mac — try again.")
         }
 
         for (name, model) in states {
-            render(MenuContent(model: model), width: 340,
-                   to: "\(outDir)/\(name).png")
+            render(MenuContent(model: model), width: 340, to: "\(outDir)/\(name).png")
         }
 
         let reviewModel = AppModel()
-        reviewModel.stage = .review
+        reviewModel.stage = .ready
         reviewModel.profile = sampleProfile
-        render(ReviewWindow(model: reviewModel), width: 640, height: 560,
-               to: "\(outDir)/7-review-window.png")
+        render(ReviewWindow(model: reviewModel), width: 640, height: 520,
+               to: "\(outDir)/09-review-window.png")
 
         print("snapshots written to \(outDir)/")
     }
@@ -93,18 +107,15 @@ enum Snapshot {
         let fit = hosting.fittingSize
         let size = NSSize(width: width, height: height ?? max(fit.height, 80))
 
-        // A real (borderless, never-shown) window gives SwiftUI a proper
-        // environment: appearance, display scale, and a layout pass.
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .aqua)
-        window.backgroundColor = .windowBackgroundColor
+        window.backgroundColor = .white
         window.contentView = hosting
         hosting.frame = NSRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()
 
-        // Second layout pass after intrinsic height settles.
         let settled = hosting.fittingSize
         if height == nil, settled.height > size.height {
             window.setContentSize(NSSize(width: width, height: settled.height))

@@ -27,6 +27,22 @@ enum ProfileStore {
         try? FileManager.default.removeItem(at: profileURL)
     }
 
+    static var pendingURL: URL { directory.appendingPathComponent("pending.md") }
+
+    static func loadPending() -> String? {
+        guard let text = try? String(contentsOf: pendingURL, encoding: .utf8),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+
+    static func savePending(_ profile: String) {
+        try? profile.write(to: pendingURL, atomically: true, encoding: .utf8)
+    }
+
+    static func deletePending() {
+        try? FileManager.default.removeItem(at: pendingURL)
+    }
+
     /// The paste-ready injection block for assistants without an API path.
     static func injectionBlock(_ profile: String) -> String {
         """
