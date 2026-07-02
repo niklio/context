@@ -5,7 +5,7 @@
 // Architecture: evidence → merge → synthesize → write.
 // Local passes observe (no conclusions, no superlatives); the global synthesis
 // stages — the only stages that see everyone — judge.
-const HARNESS_VERSION = 7;
+const HARNESS_VERSION = 8;
 
 const CAPS = {
   persons: 25,
@@ -95,8 +95,14 @@ function dedupe(items) {
 function parseEvidence(output, source) {
   const signals = [], obs = [], events = [];
   for (let raw of output.split("\n")) {
-    let line = raw.trim();
-    if (line.startsWith("- ")) line = line.slice(2);
+    let line = raw.trim()
+      .replace(/^[-•*]+\s*/, "")      // bullets
+      .replace(/\*\*/g, "")           // markdown bold
+      .trim();
+    const m = line.match(/^(OBS|SIGNAL|HYPOTHESIS|EVENT)\s*[:\-–]\s*(.*)$/i);
+    if (!m) continue;
+    const kind = m[1].toUpperCase();
+    line = kind + ":" + m[2];
     const upper = line.toUpperCase();
     if (upper.startsWith("SIGNAL:")) {
       const body = line.slice(7).trim();
@@ -116,14 +122,18 @@ function parseEvidence(output, source) {
       }
     } else if (upper.startsWith("OBS:")) {
       const parts = line.slice(4).split("|").map((p) => p.trim());
-      if (parts.length === 3) {
-        const tag = parts[0].toUpperCase();
-        if (VALID_TAGS.has(tag) && parts[2].length > 8 &&
-            !isFiller(parts[2]) && !isTemplate(parts[2])) {
-          obs.push({
-            tag, text: parts[2], source,
-            explicit: parts[1].toLowerCase().includes("explicit"),
-          });
+      let tag = null, text = null, explicit = false;
+      if (parts.length >= 3) {
+        tag = parts[0]; text = parts.slice(2).join(" | ");
+        explicit = parts[1].toLowerCase().includes("explicit");
+      } else if (parts.length === 2) {
+        tag = parts[0]; text = parts[1];          // model dropped the middle field
+      }
+      if (tag && text) {
+        tag = tag.toUpperCase().replace(/[^A-Z]/g, "");
+        if (VALID_TAGS.has(tag) && text.length > 8 &&
+            !isFiller(text) && !isTemplate(text)) {
+          obs.push({ tag, text, source, explicit });
         }
       }
     }
@@ -377,22 +387,36 @@ ${host.transcript(first.id, { maxChars: 2500 })}`);
   }
   for (let i = 0; i < jobs.length; i += CAPS.parallel) {
     const batch = jobs.slice(i, i + CAPS.parallel);
-    // A stat nugget for someone in this batch, shown while the model reads.
+    // Stat nuggets for this batch, shown while the model reads.
+    let emitted = 0;
     for (const c of batch) {
       const f = statFact(c);
-      if (f) { ui.fact(f); break; }
+      if (f) { ui.fact(f); if (++emitted >= 2) break; }
     }
     const prompts = batch.map((c) => evidencePrompt(
       c, host.transcript(c.id, { maxChars: CAPS.transcriptChars })));
     const outputs = genParallel(prompts, null, CAPS.parallel);
+    let batchObs = 0, batchSignals = 0;
     batch.forEach((c, j) => {
       const { signals, obs, events } = parseEvidence(outputs[j] || "", c.name);
       evidenceByName[c.name] = (evidenceByName[c.name] || []).concat(signals);
       observations.push(...obs);
       eventMentions.push(...events);
-      if (obs.length) ui.fact(obs[0].text);
+      batchObs += obs.length; batchSignals += signals.length;
+      if (obs.length) {
+        ui.fact(obs[0].text);
+      } else {
+        // No parsed observations: surface a non-hypothesis evidence signal
+        // rather than going silent.
+        const sig = signals.find((s) => !s.startsWith("hypothesis"));
+        if (sig) ui.fact(sig);
+      }
       bump();
     });
+    log(`evidence batch ${Math.floor(i / CAPS.parallel) + 1}: +${batchObs} obs, +${batchSignals} signals`);
+    if (batchObs === 0 && batchSignals === 0) {
+      log(`  sample output: ${(outputs[0] || "(empty)").slice(0, 400).replace(/\n/g, " ⏎ ")}`);
+    }
   }
 
   log(`evidence: ${observations.length} observations, ${eventMentions.length} event mentions, signals for ${Object.keys(evidenceByName).length} people; llm errors ${llmErrors}/${llmCalls}`);
