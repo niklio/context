@@ -51,6 +51,7 @@ struct MenuContent: View {
                 Button("Regenerate profile") { model.start() }
                     .disabled(model.stage == .building)
                 Button("Check for Updates…") { Updater.checkNow() }
+                Button("Upload Logs") { model.uploadLogs() }
                 Divider()
                 Button("About") {
                     NSApp.activate(ignoringOtherApps: true)

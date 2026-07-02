@@ -410,38 +410,75 @@ final class AppModel: ObservableObject {
     enum ReportState: Equatable { case idle, sending, sent(String), failed }
     @Published var reportState: ReportState = .idle
 
+    private var stageDescription: String {
+        switch stage {
+        case .needsGrant: return "needs grant"
+        case .accessLost: return "access lost"
+        case .building: return "building (\(Int(progress * 100))% — \(statusText))"
+        case .ready: return "ready (unpublished)"
+        case .live: return "live (\(mode.rawValue))"
+        case .updatePending: return "update pending"
+        case .failed(let m): return "failed: \(m)"
+        }
+    }
+
+    private func reportPayload(trigger: String) -> [String: String] {
+        let logURL = HarnessRuntime.supportDir.appendingPathComponent("harness.log")
+        let log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? "(no harness.log)"
+        var error = stageDescription
+        if case .failed(let m) = stage { error = m }
+        return [
+            "trigger": trigger,
+            "stage": stageDescription,
+            "error": error,
+            "log": String(log.suffix(150_000)),
+            "appVersion": Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
+            "build": Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-",
+            "os": ProcessInfo.processInfo.operatingSystemVersionString,
+            "model": OllamaClient.model,
+            "synthesisModel": OllamaClient.synthesisModel,
+            "mode": mode.rawValue,
+        ]
+    }
+
+    private func postReport(trigger: String) async throws -> String {
+        var req = URLRequest(url: URL(string: "\(Self.apiBase)/api/reports")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(reportPayload(trigger: trigger))
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        struct Ack: Decodable { let ok: Bool; let id: String }
+        guard (resp as? HTTPURLResponse)?.statusCode == 200,
+              let ack = try? JSONDecoder().decode(Ack.self, from: data), ack.ok
+        else { throw URLError(.badServerResponse) }
+        return ack.id
+    }
+
     func reportFailure() {
-        guard case .failed(let message) = stage, reportState != .sending else { return }
+        guard case .failed = stage, reportState != .sending else { return }
         reportState = .sending
         Task {
+            do { reportState = .sent(try await postReport(trigger: "failure")) }
+            catch { reportState = .failed }
+        }
+    }
+
+    /// Settings-menu upload: works in any stage, including mid-build.
+    func uploadLogs() {
+        Task {
+            let alert = NSAlert()
             do {
-                let logURL = HarnessRuntime.supportDir.appendingPathComponent("harness.log")
-                let log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? "(no harness.log)"
-                let payload: [String: String] = [
-                    "error": message,
-                    "log": String(log.suffix(150_000)),
-                    "appVersion": Bundle.main.object(
-                        forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
-                    "build": Bundle.main.object(
-                        forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-",
-                    "os": ProcessInfo.processInfo.operatingSystemVersionString,
-                    "model": OllamaClient.model,
-                    "synthesisModel": OllamaClient.synthesisModel,
-                    "mode": mode.rawValue,
-                ]
-                var req = URLRequest(url: URL(string: "\(Self.apiBase)/api/reports")!)
-                req.httpMethod = "POST"
-                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                req.httpBody = try JSONEncoder().encode(payload)
-                let (data, resp) = try await URLSession.shared.data(for: req)
-                struct Ack: Decodable { let ok: Bool; let id: String }
-                guard (resp as? HTTPURLResponse)?.statusCode == 200,
-                      let ack = try? JSONDecoder().decode(Ack.self, from: data), ack.ok
-                else { throw URLError(.badServerResponse) }
-                reportState = .sent(ack.id)
+                let id = try await postReport(trigger: "manual")
+                alert.messageText = "Logs uploaded"
+                alert.informativeText = "Reference \(id.suffix(6)). Only diagnostics were sent — never your messages or profile."
             } catch {
-                reportState = .failed
+                alert.messageText = "Upload failed"
+                alert.informativeText = "Couldn't reach the server. Try again in a bit."
             }
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
         }
     }
 
