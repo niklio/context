@@ -5,7 +5,7 @@
 // Architecture: evidence → merge → synthesize → write.
 // Local passes observe (no conclusions, no superlatives); the global synthesis
 // stages — the only stages that see everyone — judge.
-const HARNESS_VERSION = 5;
+const HARNESS_VERSION = 6;
 
 const CAPS = {
   persons: 25,
@@ -291,6 +291,25 @@ ${section}`;
 
 // ---------------------------------------------------------------- pipeline
 
+function statFact(c) {
+  const s = c.stats;
+  const opts = [];
+  if (s.spanDays > 365) {
+    opts.push(`${c.messageCount.toLocaleString()} messages with ${c.name} across ${(s.spanDays / 365).toFixed(1)} years`);
+  } else if (c.messageCount > 50) {
+    opts.push(`${c.messageCount.toLocaleString()} messages with ${c.name}`);
+  }
+  if (s.myInitiationShare >= 0.65) {
+    opts.push(`You start ${Math.round(s.myInitiationShare * 100)}% of your conversations with ${c.name}`);
+  } else if (s.myInitiationShare <= 0.35 && c.messageCount > 30) {
+    opts.push(`${c.name} usually texts you first`);
+  }
+  if (s.perWeek >= 20) {
+    opts.push(`You and ${c.name} trade ${Math.round(s.perWeek)} messages a week`);
+  }
+  return opts.length ? opts[c.id % opts.length] : null;
+}
+
 function distill() {
   log(`harness v${HARNESS_VERSION} starting`);
   const all = host.chats();
@@ -323,6 +342,10 @@ function distill() {
   businesses = businesses.sort((a, b) => b.messageCount - a.messageCount).slice(0, CAPS.businesses);
 
   log(`classified: ${persons.length} persons, ${groups.length} groups, ${businesses.length} businesses (of ${all.length})`);
+  // Facts flow from second zero: corpus headlines, then per-conversation
+  // stat nuggets as we reach each one, then real insights displace them.
+  for (const headline of host.corpusHeadlines().slice(0, 3)) ui.fact(headline);
+
   const jobs = [...persons, ...groups, ...businesses];
   if (!jobs.length) {
     throw new Error(`classification produced 0 usable conversations from ${all.length} — check harness.log`);
@@ -337,6 +360,11 @@ function distill() {
   const eventMentions = [];
   for (let i = 0; i < jobs.length; i += CAPS.parallel) {
     const batch = jobs.slice(i, i + CAPS.parallel);
+    // A stat nugget for someone in this batch, shown while the model reads.
+    for (const c of batch) {
+      const f = statFact(c);
+      if (f) { ui.fact(f); break; }
+    }
     const prompts = batch.map((c) => evidencePrompt(
       c, host.transcript(c.id, { maxChars: CAPS.transcriptChars })));
     const outputs = genParallel(prompts, null, CAPS.parallel);

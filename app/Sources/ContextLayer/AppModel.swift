@@ -42,8 +42,9 @@ final class AppModel: ObservableObject {
     private var lastBuilt: Date? { didSet { defaults.set(lastBuilt, forKey: "lastBuilt") } }
 
     private let defaults = UserDefaults.standard
-    private var statFacts: [String] = []     // corpus stats: pre-distillation only
-    private var insightFacts: [String] = []  // distilled insights: displace stats for good
+    // The harness fully owns fact content and ordering (hot-reloadable);
+    // the app is just a display loop over the most recent arrivals.
+    private var recentFacts: [String] = []
     private var factIndex = 0
     private var factTimer: Timer?
     private var grantTimer: Timer?
@@ -119,7 +120,7 @@ final class AppModel: ObservableObject {
         progress = 0
         statusText = "Reading your messages…"
         etaText = nil
-        statFacts = []; insightFacts = []; factIndex = 0; currentFact = nil
+        recentFacts = []; factIndex = 0; currentFact = nil
         startFactRotation()
         let path = dbPath
 
@@ -161,8 +162,6 @@ final class AppModel: ObservableObject {
         let stats = CorpusStats.compute(result, names: Contacts.nameMap())
         await MainActor.run { [weak self] in
             guard let self else { return }
-            self.statFacts = stats.headlines
-            self.advanceFact()
             self.progress = max(self.progress, Self.extractSlice)
         }
         return try await Distiller.run(result, stats: stats, progress: onProgress)
@@ -178,8 +177,9 @@ final class AppModel: ObservableObject {
         // Facts are independent events — never gate them on other fields.
         if !p.latestInsights.isEmpty {
             for insight in p.latestInsights {
-                insightFacts.append(insight.hasPrefix("- ") ? String(insight.dropFirst(2)) : insight)
+                recentFacts.append(insight.hasPrefix("- ") ? String(insight.dropFirst(2)) : insight)
             }
+            recentFacts = Array(recentFacts.suffix(8))
             let freshest = p.latestInsights[0]
             factIndex = 0
             withAnimation(.easeInOut(duration: 0.4)) {
@@ -229,9 +229,8 @@ final class AppModel: ObservableObject {
     }
 
     private func advanceFact() {
-        // Once real insights exist, stats never come back; between new
-        // insights we recycle the freshest few (newest first).
-        let pool = insightFacts.isEmpty ? statFacts : Array(insightFacts.suffix(8).reversed())
+        // Recycle the freshest arrivals (newest first) between new facts.
+        let pool = Array(recentFacts.reversed())
         guard !pool.isEmpty else { return }
         let next = pool[factIndex % pool.count]
         factIndex += 1

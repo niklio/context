@@ -80,7 +80,7 @@ enum HarnessRuntime {
         var progress: (Int, Int) -> Void
     }
 
-    static func execute(script: String, corpus: CorpusIndex,
+    static func execute(script: String, origin: String, corpus: CorpusIndex,
                         callbacks: Callbacks) throws -> String {
         guard !script.isEmpty else {
             throw DistillError.ollamaFailed("no harness script available")
@@ -94,7 +94,7 @@ enum HarnessRuntime {
         }
 
         let logURL = supportDir.appendingPathComponent("harness.log")
-        try? "runtime: \(corpus.chats.count) chats extracted, \(corpus.names.count) contacts resolved\n"
+        try? "runtime: \(corpus.chats.count) chats extracted, \(corpus.names.count) contacts resolved, harness origin: \(origin)\n"
             .write(to: logURL, atomically: true, encoding: .utf8)
 
         // ---- host bridge (JSON-string boundary keeps types simple) ---------

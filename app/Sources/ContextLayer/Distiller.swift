@@ -239,7 +239,7 @@ enum Distiller {
         try await OllamaClient.warmup()
 
         let (script, origin) = await HarnessRuntime.loadScript()
-        progress(DistillProgress(status: "Running harness (\(origin))…"))
+        progress(DistillProgress(status: "Studying your conversations…"))
 
         let corpus = CorpusIndex(chats: result.chats,
                                  names: Contacts.nameMap(),
@@ -256,7 +256,7 @@ enum Distiller {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let profile = try HarnessRuntime.execute(
-                        script: script, corpus: corpus, callbacks: callbacks)
+                        script: script, origin: origin, corpus: corpus, callbacks: callbacks)
                     cont.resume(returning: profile)
                 } catch {
                     cont.resume(throwing: error)
