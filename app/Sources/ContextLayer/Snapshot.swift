@@ -17,18 +17,6 @@ enum Snapshot {
         app.setActivationPolicy(.accessory)
         NSApp.appearance = NSAppearance(named: .aqua)
 
-        let sampleStats = [
-            "142,318 messages across 9.4 years of history",
-            "214 conversations — you sent 71,204 of the messages",
-            "Most-messaged: Hanan (31,442 messages)",
-            "You text most around 9pm",
-            "Median text length: 42 characters · 3,214 tapbacks given",
-        ]
-        let sampleInsights = [
-            "- Dry, lowercase texting style with sparse but deliberate emoji",
-            "- Trains for triathlons; coordinates long rides on weekends",
-            "- Deeply engaged with AI tooling and benchmarks",
-        ]
         let sampleProfile = """
         # Your Profile
 
@@ -46,41 +34,43 @@ enum Snapshot {
 
         ## Interests
         Triathlon training, AI benchmarks, home automation.
-
-        ## Preferences & practical details
-        Morning workouts, evening texting, Google Calendar for everything.
         """
 
         var states: [(String, AppModel)] = []
         func state(_ name: String, _ configure: (AppModel) -> Void) {
             let m = AppModel()
+            m.stage = .needsGrant   // neutral before configure (init may auto-start)
             configure(m)
             states.append((name, m))
         }
 
-        state("1-grant")      { $0.stage = .needsGrant }
-        state("2-ready")      { $0.stage = .ready }
-        state("3-extracting") { m in
-            m.stage = .extracting
-            m.statLines = Array(sampleStats.prefix(3))
+        state("1-grant") { $0.stage = .needsGrant }
+        state("2-building-download") { m in
+            m.stage = .building
+            m.progress = 0.29
+            m.statusText = "Downloading the local model…"
+            m.etaText = "~2 min left"
+            m.currentFact = "142,318 messages across 9.4 years of history"
         }
-        state("4-distill-download") { m in
-            m.stage = .distilling
-            m.statLines = sampleStats
-            m.distillStatus = "Downloading Gemma (one-time, 3.3 GB)… 47%"
+        state("3-building-distill") { m in
+            m.stage = .building
+            m.progress = 0.81
+            m.statusText = "Distilling your profile…"
+            m.etaText = "~40s left"
+            m.currentFact = "You plan long weekend rides with a tight group of training friends"
         }
-        state("5-distill-progress") { m in
-            m.stage = .distilling
-            m.statLines = sampleStats
-            m.chunkProgress = (3, 9)
-            m.insightLines = sampleInsights
-        }
-        state("6-review-menu") { m in
+        state("4-ready-upload") { m in
             m.stage = .review
             m.profile = sampleProfile
+            m.publishedURL = nil
         }
-        state("7-failed") { m in
-            m.stage = .failed("The bundled local-model runtime is missing — re-download the app from context.nikliolios.com, or install Ollama from ollama.com.")
+        state("5-ready-linked") { m in
+            m.stage = .review
+            m.profile = sampleProfile
+            m.publishedURL = "https://context.nikliolios.com/p/63f6327db8c84a19b749e55ee15cc9"
+        }
+        state("6-failed") { m in
+            m.stage = .failed("Upload failed: the network connection was lost. Your profile is safe on this Mac — try again.")
         }
 
         for (name, model) in states {
@@ -92,7 +82,7 @@ enum Snapshot {
         reviewModel.stage = .review
         reviewModel.profile = sampleProfile
         render(ReviewWindow(model: reviewModel), width: 640, height: 560,
-               to: "\(outDir)/8-review-window.png")
+               to: "\(outDir)/7-review-window.png")
 
         print("snapshots written to \(outDir)/")
     }

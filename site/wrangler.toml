@@ -10,6 +10,10 @@ binding = "ASSETS"
 binding = "RELEASES"
 bucket_name = "context-releases"
 
+[[kv_namespaces]]
+binding = "PROFILES"
+id = "298db151c04144498bf0f00cb6dbd8ba"
+
 routes = [
   { pattern = "context.nikliolios.com", custom_domain = true }
 ]

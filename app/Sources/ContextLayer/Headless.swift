@@ -34,6 +34,10 @@ enum Headless {
                 do {
                     let profile = try await Distiller.run(result, stats: stats) { p in
                         if let status = p.status { print("  \(status)"); return }
+                        if let done = p.downloadCompleted, let total = p.downloadTotal {
+                            print("  model download \(done * 100 / max(total, 1))%"); return
+                        }
+                        guard p.totalChunks > 0 else { return }
                         print("  chunk \(p.completedChunks)/\(p.totalChunks) done"
                             + (p.latestInsights.isEmpty ? "" : " — \(p.latestInsights[0])"))
                     }

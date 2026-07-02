@@ -21,7 +21,9 @@ struct DistillProgress {
     var completedChunks: Int = 0
     var totalChunks: Int = 0
     var latestInsights: [String] = []
-    var status: String?          // e.g. model download progress
+    var status: String?           // free-form phase text (merge, final write)
+    var downloadCompleted: Int64? // model pull, bytes
+    var downloadTotal: Int64?
 }
 
 // MARK: - Ollama client
@@ -95,8 +97,8 @@ struct OllamaClient {
         return URLSession(configuration: cfg)
     }()
 
-    /// Pull the model, streaming download progress (first run only).
-    static func pullModel(progress: @escaping @Sendable (String) -> Void) async throws {
+    /// Pull the model, streaming byte-level download progress (first run only).
+    static func pullModel(progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/pull"))
         req.httpMethod = "POST"
         req.httpBody = try JSONSerialization.data(withJSONObject: ["model": model])
@@ -111,13 +113,10 @@ struct OllamaClient {
             if let err = parsed.error { throw DistillError.ollamaFailed(err) }
             if let total = parsed.total, let done = parsed.completed, total > 0 {
                 let pct = Int(done * 100 / total)
-                if pct != lastPct {
+                if pct != lastPct {  // throttle to whole-percent steps
                     lastPct = pct
-                    let gb = Double(total) / 1_073_741_824
-                    progress("Downloading Gemma (one-time, \(String(format: "%.1f", gb)) GB)… \(pct)%")
+                    progress(done, total)
                 }
-            } else if let status = parsed.status, status != "success" {
-                progress(status)
             }
         }
     }
@@ -257,8 +256,8 @@ enum Distiller {
                     progress: @escaping @Sendable (DistillProgress) -> Void) async throws -> String {
         try await OllamaClient.ensureServer()
         if !(try await OllamaClient.hasModel()) {
-            try await OllamaClient.pullModel { status in
-                progress(DistillProgress(status: status))
+            try await OllamaClient.pullModel { done, total in
+                progress(DistillProgress(downloadCompleted: done, downloadTotal: total))
             }
         }
 

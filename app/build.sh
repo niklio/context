@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION=0.2.4
+VERSION=0.3.0
 
 ./vendor/fetch-ollama.sh
 
@@ -14,6 +14,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/ContextLayer "$APP/Contents/MacOS/ContextLayer"
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp logo.png "$APP/Contents/Resources/logo.png"
 
 cp vendor/ollama-arm64/ollama vendor/ollama-arm64/llama-server "$APP/Contents/MacOS/"
 
@@ -28,7 +29,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>Context Layer</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>6</string>
+    <key>CFBundleVersion</key><string>7</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>

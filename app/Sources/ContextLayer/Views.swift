@@ -5,138 +5,177 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             header
-            Divider()
             switch model.stage {
             case .needsGrant: grantView
-            case .ready: readyView
-            case .extracting: extractingView
-            case .distilling: distillingView
-            case .review: reviewSummaryView
+            case .building: buildingView
+            case .review: reviewView
             case .failed(let message): failedView(message)
             }
-            Divider()
-            footer
         }
-        .padding(14)
+        .padding(16)
         .frame(width: 340)
     }
 
+    static let logo: NSImage = {
+        // Resources/logo.png inside the .app; falls back to the icon next to
+        // the bare binary (snapshot/headless runs), then the generic app icon.
+        let candidates = [
+            Bundle.main.resourcePath.map { $0 + "/logo.png" },
+            Bundle.main.executablePath.map {
+                URL(fileURLWithPath: $0).deletingLastPathComponent()
+                    .appendingPathComponent("logo.png").path
+            },
+        ].compactMap { $0 }
+        for path in candidates where FileManager.default.fileExists(atPath: path) {
+            if let img = NSImage(contentsOfFile: path) { return img }
+        }
+        return NSApp.applicationIconImage
+    }()
+
     private var header: some View {
-        HStack {
-            Image(systemName: "person.text.rectangle")
-            Text("Context Layer").font(.headline)
+        HStack(spacing: 8) {
+            Image(nsImage: Self.logo)
+                .resizable().interpolation(.high)
+                .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+            Text("Context").font(.headline)
             Spacer()
+            Button { NSApp.terminate(nil) } label: {
+                Image(systemName: "power")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Quit Context")
         }
     }
 
-    // MARK: - Stages
+    // MARK: - Grant
 
     private var grantView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Your profile is built from your own Messages history — everything stays on this Mac.")
-                .font(.callout).foregroundStyle(.secondary)
-            Text("macOS requires you to grant Full Disk Access by hand:")
-                .font(.callout)
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Click the button below", systemImage: "1.circle")
-                Label("Find **Context Layer** in the list, flip it on", systemImage: "2.circle")
-                Label("Come back — the app notices instantly", systemImage: "3.circle")
-            }.font(.callout)
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Open the button below", systemImage: "1.circle.fill")
+                Label("Turn on **Context Layer** in the list", systemImage: "2.circle.fill")
+                Label("Come back — it starts on its own", systemImage: "3.circle.fill")
+            }
+            .font(.callout)
+            .labelStyle(StepLabelStyle())
             Button("Open Full Disk Access Settings") { model.openFullDiskAccessSettings() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .frame(maxWidth: .infinity)
         }
     }
 
-    private var readyView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Messages access granted", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-            Text("Ready to read your history, distill it into a profile you review, and hand it to your assistants. Raw messages never leave this Mac.")
-                .font(.callout).foregroundStyle(.secondary)
-            Button("Build my profile") { model.start() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-        }
-    }
+    // MARK: - Building
 
-    private var extractingView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Reading your history…").font(.callout)
+    private var buildingView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ProgressView(value: model.progress)
+                .progressViewStyle(.linear)
+                .tint(.blue)
+            HStack(alignment: .firstTextBaseline) {
+                Text(model.statusText).font(.callout)
+                Spacer()
+                Text([model.etaText, "\(Int(model.progress * 100))%"]
+                        .compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
-            statStream
-        }
-    }
-
-    private var distillingView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text(model.distillStatus
-                     ?? (model.chunkProgress.total > 0
-                         ? "Distilling with Gemma (on-device)… \(model.chunkProgress.done)/\(model.chunkProgress.total)"
-                         : "Distilling with Gemma (on-device)…"))
-                    .font(.callout)
-            }
-            statStream
-            if !model.insightLines.isEmpty {
+            if let fact = model.currentFact {
                 Divider()
-                ForEach(model.insightLines, id: \.self) { line in
-                    Text(line).font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text(fact)
+                    .font(.callout.italic())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .id(fact)
+                    .transition(.opacity)
+                    .frame(minHeight: 36, alignment: .topLeading)
             }
         }
     }
 
-    private var statStream: some View {
-        ForEach(model.statLines, id: \.self) { line in
-            Label(line, systemImage: "sparkle").font(.caption)
-        }
-    }
+    // MARK: - Review / upload
 
-    private var reviewSummaryView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var reviewView: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Label("Your profile is ready", systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
-            Text("Review it word-for-word, edit or delete anything, then hand it to your assistants.")
-                .font(.callout).foregroundStyle(.secondary)
-            Button("Review & edit profile") { openWindow(id: "review"); NSApp.activate(ignoringOtherApps: true) }
-                .buttonStyle(.borderedProminent)
-            HStack {
-                ForEach(Assistant.allCases) { assistant in
-                    Button(assistant.rawValue) { model.inject(into: assistant) }
+                .font(.callout.weight(.medium))
+
+            if let link = model.publishedURL {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(link)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack {
+                        Button("Open") { model.openPublishedURL() }
+                            .buttonStyle(.borderedProminent)
+                        Button(model.linkCopied ? "Copied" : "Copy link") {
+                            model.copyPublishedURL()
+                        }
+                    }
                 }
+                .padding(10)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                Button {
+                    model.uploadProfile()
+                } label: {
+                    if model.uploading {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Uploading…")
+                        }.frame(maxWidth: .infinity)
+                    } else {
+                        Text("Upload & get your link").frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(model.uploading)
+                Text("Your link opens the Context web app, where you connect your assistants.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(model.copiedAt != nil
-                 ? "Profile copied — paste into the chat that just opened."
-                 : "Buttons copy your profile and open the assistant — just paste.")
-                .font(.caption).foregroundStyle(.secondary)
-            Button("Rebuild from Messages") { model.start() }
-                .buttonStyle(.link).font(.caption)
+
+            Button("Review profile first…") {
+                openWindow(id: "review")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .buttonStyle(.link)
+            .font(.caption)
         }
     }
+
+    // MARK: - Failed
 
     private func failedView(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Label("Something went wrong", systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-            Text(message).font(.caption).foregroundStyle(.secondary)
-            Button("Try again") { model.refreshGrant() }
+                .font(.callout.weight(.medium))
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again") { model.retry() }
+                .buttonStyle(.borderedProminent)
         }
     }
+}
 
-    private var footer: some View {
-        HStack {
-            Button("Choose database…") { model.chooseDatabase() }
-                .buttonStyle(.link).font(.caption)
-            Spacer()
-            Button("Quit") { NSApp.terminate(nil) }
-                .buttonStyle(.link).font(.caption)
+struct StepLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            configuration.icon.foregroundStyle(.blue)
+            configuration.title
         }
     }
 }
@@ -147,7 +186,7 @@ struct ReviewWindow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Your profile — edit freely; this exact text is what gets shared.")
+                Text("Edit freely — this exact text is what gets uploaded and shared.")
                     .font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Button("Copy inject block") { model.copyInjectionBlock() }
