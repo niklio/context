@@ -42,7 +42,8 @@ final class AppModel: ObservableObject {
     private var lastBuilt: Date? { didSet { defaults.set(lastBuilt, forKey: "lastBuilt") } }
 
     private let defaults = UserDefaults.standard
-    private var facts: [String] = []
+    private var statFacts: [String] = []     // corpus stats: pre-distillation only
+    private var insightFacts: [String] = []  // distilled insights: displace stats for good
     private var factIndex = 0
     private var factTimer: Timer?
     private var grantTimer: Timer?
@@ -118,7 +119,7 @@ final class AppModel: ObservableObject {
         progress = 0
         statusText = "Reading your messages…"
         etaText = nil
-        facts = []; factIndex = 0; currentFact = nil
+        statFacts = []; insightFacts = []; factIndex = 0; currentFact = nil
         startFactRotation()
         let path = dbPath
 
@@ -160,7 +161,7 @@ final class AppModel: ObservableObject {
         let stats = CorpusStats.compute(result, names: Contacts.nameMap())
         await MainActor.run { [weak self] in
             guard let self else { return }
-            self.facts = stats.headlines
+            self.statFacts = stats.headlines
             self.advanceFact()
             self.progress = max(self.progress, Self.extractSlice)
         }
@@ -193,9 +194,17 @@ final class AppModel: ObservableObject {
             let avg = chunkTimes.reduce(0, +) / Double(chunkTimes.count)
             etaText = Self.eta(seconds: avg * Double(p.totalChunks - p.completedChunks))
             for insight in p.latestInsights {
-                facts.append(insight.hasPrefix("- ") ? String(insight.dropFirst(2)) : insight)
+                insightFacts.append(insight.hasPrefix("- ") ? String(insight.dropFirst(2)) : insight)
             }
-            if !p.latestInsights.isEmpty { factIndex = facts.count - 1 }
+            if let freshest = p.latestInsights.first {
+                // Show what we just learned, immediately — the fact stream
+                // should feel like it's tracking the distillation.
+                factIndex = 0
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    currentFact = freshest.hasPrefix("- ")
+                        ? String(freshest.dropFirst(2)) : freshest
+                }
+            }
         } else if let status = p.status {
             statusText = status
             etaText = nil
@@ -221,8 +230,11 @@ final class AppModel: ObservableObject {
     }
 
     private func advanceFact() {
-        guard !facts.isEmpty else { return }
-        let next = facts[factIndex % facts.count]
+        // Once real insights exist, stats never come back; between new
+        // insights we recycle the freshest few (newest first).
+        let pool = insightFacts.isEmpty ? statFacts : Array(insightFacts.suffix(8).reversed())
+        guard !pool.isEmpty else { return }
+        let next = pool[factIndex % pool.count]
         factIndex += 1
         withAnimation(.easeInOut(duration: 0.4)) { currentFact = next }
     }
