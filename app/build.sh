@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION=0.7.0
+VERSION=0.8.0
 
 ./vendor/fetch-ollama.sh
 
@@ -18,6 +18,12 @@ cp logo.png "$APP/Contents/Resources/logo.png"
 cp menubar.png "$APP/Contents/Resources/menubar.png"
 
 cp vendor/ollama-arm64/ollama vendor/ollama-arm64/llama-server "$APP/Contents/MacOS/"
+cp harness.js "$APP/Contents/Resources/harness.js"
+
+# Sparkle auto-update framework (SPM binary artifact)
+SPARKLE_FW=.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
+mkdir -p "$APP/Contents/Frameworks"
+cp -R "$SPARKLE_FW" "$APP/Contents/Frameworks/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -30,11 +36,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>Context</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>19</string>
+    <key>CFBundleVersion</key><string>20</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHumanReadableCopyright</key><string>Local-first. Raw messages never leave this Mac.</string>
+    <key>SUFeedURL</key><string>https://context.nikliolios.com/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>9Ts9CqPxc+htnwz541nMcb26qTyYOVSEYW4eMP8jrJg=</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUAutomaticallyUpdate</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>21600</integer>
 </dict>
 </plist>
 PLIST
@@ -43,6 +54,7 @@ plutil -lint "$APP/Contents/Info.plist"
 
 # Ad-hoc signature: stable identity so the Full Disk Access grant survives
 # rebuilds on the same machine. Real Developer ID signing comes later.
+codesign --force --sign - "$APP/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign - --identifier com.nikliolios.contextlayer "$APP"
 
 # Distribution: a styled drag-to-Applications DMG.

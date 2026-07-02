@@ -1,5 +1,19 @@
 import ServiceManagement
+import Sparkle
 import SwiftUI
+
+/// Sparkle auto-updater. Checks the appcast every 6h (Info.plist) and
+/// installs updates in place — no more manual reinstalls.
+@MainActor
+enum Updater {
+    static let controller = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+
+    static func checkNow() {
+        NSApp.activate(ignoringOtherApps: true)
+        controller.updater.checkForUpdates()
+    }
+}
 
 @main
 enum Entry {
@@ -29,6 +43,7 @@ struct ContextLayerApp: App {
            SMAppService.mainApp.status == .notRegistered {
             try? SMAppService.mainApp.register()
         }
+        _ = Updater.controller   // start the update cycle
     }
 
     /// The "c." logo mark as a template image: monochrome ink that the system

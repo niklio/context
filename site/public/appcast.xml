@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Context</title>
+    <item>
+      <title>0.8.0</title>
+      <pubDate>Thu, 02 Jul 2026 10:03:02 -0400</pubDate>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://context.nikliolios.com/Context-0.8.0.dmg" sparkle:edSignature="u5wyI/iRyZmvsJnuLnKop46tV8tuMez+5zx4N/JhAbMEeEtTOuWQh1oiTzMs+4nc0tM0wZT3YjfpwKiQgVNVBw==" length="18559273" type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>

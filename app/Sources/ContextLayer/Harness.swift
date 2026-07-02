@@ -60,45 +60,6 @@ struct PersonStats {
     }
 }
 
-/// Everything the harness knows about one person before synthesis.
-struct PersonDossier {
-    let name: String
-    let stats: PersonStats
-    var evidence: [String] = []       // role signals + hypotheses, with receipts
-    var isGroup = false
-}
-
-struct PersonaObservation {
-    let tag: String
-    let text: String
-    let source: String        // conversation name
-    let period: String        // e.g. "Mar 2025–Jul 2026"
-    let explicit: Bool
-
-    var line: String {
-        "- [\(source), \(period), \(explicit ? "explicit" : "inferred")] \(text)"
-    }
-}
-
-struct RoleAssignment {
-    let name: String
-    let role: String           // from the taxonomy, or "unclear"
-    let note: String           // comparative/qualitative context, may be empty
-}
-
-/// One conversation's mention of a real-world event. The timeline stage
-/// merges mentions of the same event across conversations — every extra
-/// source is a corroboration.
-struct EventMention {
-    let dateText: String       // "2024-05-12" or "2024-05" as evidenced
-    let text: String
-    let source: String
-    let explicit: Bool
-
-    var sortKey: String { dateText }
-    var line: String { "\(dateText) | \(text) | seen in: \(source)" }
-}
-
 enum Heuristics {
     /// Cheap counterpart classification. Ambiguous cases go to the model.
     static func classify(_ chat: Chat, resolvedName: String?) -> CounterpartKind? {
