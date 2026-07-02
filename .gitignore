@@ -6,3 +6,4 @@ app/.build/
 app/build/
 *.zip
 .DS_Store
+vendor/

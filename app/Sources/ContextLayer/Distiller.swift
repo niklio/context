@@ -10,7 +10,7 @@ enum DistillError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .ollamaNotFound:
-            return "Ollama not found. Install it from ollama.com — the profile is distilled by Gemma running locally, so nothing leaves this Mac."
+            return "The bundled local-model runtime is missing — re-download the app from context.nikliolios.com, or install Ollama from ollama.com."
         case .ollamaFailed(let m):
             return "Distillation failed: \(m)"
         }
@@ -40,9 +40,17 @@ struct OllamaClient {
     }()
 
     static func binaryPath() -> String? {
-        ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama",
-         "/Applications/Ollama.app/Contents/Resources/ollama"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        var candidates: [String] = []
+        // Bundled runtime ships next to the app executable in Contents/MacOS —
+        // the placement that keeps the codesign seal intact (code elsewhere in
+        // the bundle, or dangling symlinks, gets the app flagged as "damaged").
+        if let bundled = Bundle.main.executableURL?
+            .deletingLastPathComponent().appendingPathComponent("ollama").path {
+            candidates.append(bundled)
+        }
+        candidates += ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama",
+                       "/Applications/Ollama.app/Contents/Resources/ollama"]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     static func isUp() async -> Bool {

@@ -8,15 +8,17 @@ user-approved profile ever exists as an artifact.
 ## Install (on the machine with your Messages history)
 
 1. Copy `build/ContextLayer-0.1.0.zip` over and unzip into `/Applications`.
-2. First launch: right-click → Open (ad-hoc signed, not notarized yet).
-3. Menu-bar icon appears → follow the Full Disk Access walkthrough
+2. First launch: macOS blocks unsigned apps — System Settings → Privacy &
+   Security → scroll down → **Open Anyway** (not notarized yet).
+2b. Menu-bar icon appears → follow the Full Disk Access walkthrough
    (System Settings → Privacy & Security → Full Disk Access → enable
    Context Layer). The app detects the grant within ~2s.
-4. Click **Build my profile**. Local stats stream while it reads; distillation
-   runs fully on-device with Gemma via Ollama (`brew install ollama` or
-   ollama.com — the app starts the server and pulls `gemma3:4b` itself on
-   first run, ~3.3 GB one-time). Override the model with `CL_MODEL=...`.
-5. Review/edit the profile, then use the Claude / ChatGPT / Gemini buttons:
+3. Click **Build my profile**. Local stats stream while it reads; distillation
+   runs fully on-device with Gemma. The Ollama runtime is bundled inside the
+   app (arm64-thinned `ollama` + `llama-server` in Contents/MacOS — nothing to
+   install); the `gemma3:4b` weights download once (~3.3 GB). Override the
+   model with `CL_MODEL=...`.
+4. Review/edit the profile, then use the Claude / ChatGPT / Gemini buttons:
    each copies the inject block to the clipboard and opens the assistant —
    paste and send.
 
@@ -59,3 +61,13 @@ runs extraction + stats only.
   to the user only — no dossiers on contacts.
 - `codesign -s -` with a stable identifier so the FDA grant survives rebuilds
   on the same machine. Developer ID + notarization is a later step.
+
+## Bundling gotchas (learned the hard way)
+
+- Executable code must live in `Contents/MacOS`; dangling symlinks anywhere
+  in the bundle break the codesign seal and Gatekeeper reports the app as
+  "damaged or incomplete".
+- Ollama's darwin binaries are statically linked: the dylibs and MLX runtimes
+  in the release tarball are unnecessary for the ggml Metal path.
+- Releases are served from Cloudflare R2 (`context-releases` bucket) via the
+  site Worker — Workers static assets cap at 25 MB/file.
