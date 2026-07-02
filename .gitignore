@@ -1,0 +1,8 @@
+# extracted message data — never commit
+*.json
+!*schema*.json
+# build artifacts
+app/.build/
+app/build/
+*.zip
+.DS_Store
