@@ -29,7 +29,11 @@ struct DistillProgress {
 // MARK: - Ollama client
 
 struct OllamaClient {
-    static let baseURL = URL(string: "http://127.0.0.1:11434")!
+    // Dedicated port: never adopt a stranger's (possibly orphaned) server on
+    // the default 11434 — an ollama spawned by a deleted app install keeps
+    // running but can't start its inference worker (binary gone).
+    static let port = 11435
+    static let baseURL = URL(string: "http://127.0.0.1:11435")!
     static var model: String {
         ProcessInfo.processInfo.environment["CL_MODEL"] ?? "gemma3:4b"
     }
@@ -76,6 +80,9 @@ struct OllamaClient {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: bin)
         proc.arguments = ["serve"]
+        var env = ProcessInfo.processInfo.environment
+        env["OLLAMA_HOST"] = "127.0.0.1:\(port)"
+        proc.environment = env
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError = FileHandle.nullDevice
         try? proc.run()
@@ -116,14 +123,57 @@ struct OllamaClient {
         }
     }
 
+    /// Kill ollama processes whose executable no longer exists on disk —
+    /// orphans from deleted app bundles. They hold the port and fail every
+    /// generate with "llama-server binary not found".
+    static func killOrphanedServers() {
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        ps.arguments = ["-fl", "ollama"]
+        let pipe = Pipe()
+        ps.standardOutput = pipe
+        try? ps.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        ps.waitUntilExit()
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let parts = line.split(separator: " ", maxSplits: 1)
+            guard parts.count == 2, let pid = Int32(parts[0]) else { continue }
+            let cmd = String(parts[1])
+            guard let binPath = cmd.split(separator: " ").first.map(String.init),
+                  binPath.hasPrefix("/"),
+                  !FileManager.default.fileExists(atPath: binPath) else { continue }
+            kill(pid, SIGKILL)
+        }
+    }
+
+    /// One tiny generate to prove the server can actually run inference; on
+    /// the orphaned-server failure, sweep and respawn once.
+    static func warmup() async throws {
+        do {
+            _ = try await generateRaw(prompt: "hi", modelName: model, numPredict: 1)
+        } catch {
+            killOrphanedServers()
+            try? await Task.sleep(for: .seconds(1))
+            try await ensureServer()
+            _ = try await generateRaw(prompt: "hi", modelName: model, numPredict: 1)
+        }
+    }
+
     static func generate(prompt: String, model modelName: String? = nil) async throws -> String {
+        try await generateRaw(prompt: prompt, modelName: modelName ?? model, numPredict: nil)
+    }
+
+    private static func generateRaw(prompt: String, modelName: String,
+                                    numPredict: Int?) async throws -> String {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/generate"))
         req.httpMethod = "POST"
+        var options: [String: Any] = ["num_ctx": 16384, "temperature": 0.3]
+        if let n = numPredict { options["num_predict"] = n }
         req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": modelName ?? model,
+            "model": modelName,
             "prompt": prompt,
             "stream": false,
-            "options": ["num_ctx": 16384, "temperature": 0.3],
+            "options": options,
         ] as [String: Any])
         let (data, resp) = try await session.data(for: req)
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
@@ -148,6 +198,9 @@ enum Distiller {
                 progress(DistillProgress(downloadCompleted: done, downloadTotal: total))
             }
         }
+
+        progress(DistillProgress(status: "Warming up the local model…"))
+        try await OllamaClient.warmup()
 
         let (script, origin) = await HarnessRuntime.loadScript()
         progress(DistillProgress(status: "Running harness (\(origin))…"))

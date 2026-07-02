@@ -279,28 +279,52 @@ struct MenuContent: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Try again") { model.retry() }
                 .buttonStyle(PrimaryButtonStyle())
-            switch model.reportState {
-            case .idle:
-                Button("Report to developer") { model.reportFailure() }
-                    .buttonStyle(GhostButtonStyle())
-                    .frame(maxWidth: .infinity)
-            case .sending:
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Sending report…")
-                        .font(.system(size: 12)).foregroundStyle(Theme.muted)
-                }
-                .frame(maxWidth: .infinity)
-            case .sent(let id):
-                Text("Reported — reference \(id.suffix(6)). Only diagnostics were sent, never your messages or profile.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            case .failed:
-                Button("Report failed — try again") { model.reportFailure() }
-                    .buttonStyle(GhostButtonStyle(tint: Theme.orange))
-                    .frame(maxWidth: .infinity)
+            reportLine.padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder private var reportLine: some View {
+        switch model.reportState {
+        case .idle:
+            HStack(spacing: 5) {
+                Image(systemName: "paperplane")
+                    .font(.system(size: 10))
+                Text("Something keeps breaking?")
+                Button("Report it") { model.reportFailure() }
+                    .buttonStyle(.plain)
+                    .fontWeight(.semibold)
+                    .underline(true, pattern: .dot, color: Theme.line)
             }
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.muted)
+        case .sending:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Sending report…")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.muted)
+        case .sent:
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.green)
+                Text("Report sent")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.muted)
+        case .failed:
+            HStack(spacing: 5) {
+                Image(systemName: "paperplane")
+                    .font(.system(size: 10))
+                Text("Sending failed.")
+                Button("Try again") { model.reportFailure() }
+                    .buttonStyle(.plain)
+                    .fontWeight(.semibold)
+                    .underline(true, pattern: .dot, color: Theme.line)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.muted)
         }
     }
 
