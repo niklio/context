@@ -6,7 +6,7 @@
 // cards with a fixed viewpoint, roster scored by volume×recency with evidence
 // gates, deterministic role hints (surname, contact decorations, owner name),
 // business lexicon, lenient event dates. Numbers live in code, never in prose.
-const HARNESS_VERSION = 9;
+const HARNESS_VERSION = 10;
 
 const CAPS = {
   persons: 18,
@@ -57,6 +57,8 @@ const BUSINESS_RX = new RegExp(
 // ---------------------------------------------------------------- helpers
 
 let llmErrors = 0, llmCalls = 0, firstLlmError = null;
+let llmFactsStarted = false;   // once true, raw stats never appear again
+function llmFact(text) { llmFactsStarted = true; ui.fact(text); }
 function gen(prompt, model) {
   llmCalls++;
   const out = llm.generate(prompt, model) || "";
@@ -409,7 +411,13 @@ function distill() {
   let completed = 0;
   const bump = () => ui.progress(++completed, totalUnits);
 
+  // Raw stats exist ONLY to cover prefill latency at the very start.
   for (const headline of host.corpusHeadlines().slice(0, 3)) ui.fact(headline);
+  let nuggets = 0;
+  for (const c of persons) {
+    const f = statFact(c);
+    if (f) { ui.fact(f); if (++nuggets >= 3) break; }
+  }
 
   // First taste: fast small call so an LLM insight lands in ~15s.
   const observations = [], eventMentions = [];
@@ -419,7 +427,7 @@ function distill() {
       host.transcript(first.id, { maxChars: 2500 })));
     const taste = parseEvidence(quick, normalizeName(first.name));
     observations.push(...taste.obs);
-    for (const o of taste.obs.slice(0, 2)) ui.fact(o.text);
+    for (const o of taste.obs.slice(0, 2)) llmFact(o.text);
   }
 
   // ---- Stage 1a: relationship evidence (focused pass) ---------------------
@@ -427,10 +435,9 @@ function distill() {
   const evidenceByName = {};
   for (let i = 0; i < relJobs.length; i += CAPS.parallel) {
     const batch = relJobs.slice(i, i + CAPS.parallel);
-    let emitted = 0;
-    for (const c of batch) {
-      const f = statFact(c);
-      if (f) { ui.fact(f); if (++emitted >= 2) break; }
+    if (!llmFactsStarted) {
+      const c = batch.find((x) => statFact(x));
+      if (c) ui.fact(statFact(c));
     }
     const outs = genParallel(batch.map((c) => relationshipEvidencePrompt(
       c, host.transcript(c.id, { maxChars: CAPS.relationshipChars }))), null, CAPS.parallel);
@@ -439,8 +446,8 @@ function distill() {
       const { signals } = parseEvidence(outs[j] || "", normalizeName(c.name));
       evidenceByName[normalizeName(c.name)] = signals;
       batchSignals += signals.length;
-      const sig = signals.find((s) => !s.startsWith("hypothesis"));
-      if (sig) ui.fact(sig);
+      signals.filter((s) => !s.startsWith("hypothesis")).slice(0, 2)
+        .forEach((s) => llmFact(s));
       bump();
     });
     log(`rel batch ${Math.floor(i / CAPS.parallel) + 1}: +${batchSignals} signals`);
@@ -460,7 +467,7 @@ function distill() {
       observations.push(...obs);
       eventMentions.push(...events);
       batchObs += obs.length; batchEvents += events.length;
-      if (obs.length) ui.fact(obs[0].text);
+      obs.slice(0, 2).forEach((o) => llmFact(o.text));
       bump();
     });
     log(`persona batch ${Math.floor(i / CAPS.parallel) + 1}: +${batchObs} obs, +${batchEvents} events`);
