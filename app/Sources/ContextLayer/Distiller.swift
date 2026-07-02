@@ -74,23 +74,59 @@ struct OllamaClient {
         return (try? await session.data(for: req)) != nil
     }
 
+    static let numParallel = 4
+    private static var markerURL: URL {
+        HarnessRuntime.supportDir.appendingPathComponent("server.json")
+    }
+
     static func ensureServer() async throws {
-        if await isUp() { return }
+        if await isUp() {
+            // Reuse only if it was spawned with the current config; an older
+            // server of ours decodes serially and would silently queue.
+            if let data = try? Data(contentsOf: markerURL),
+               let marker = try? JSONDecoder().decode([String: Int].self, from: data),
+               marker["parallel"] == numParallel {
+                return
+            }
+            killServerOnPort()
+            try? await Task.sleep(for: .seconds(1))
+        }
         guard let bin = binaryPath() else { throw DistillError.ollamaNotFound }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: bin)
         proc.arguments = ["serve"]
         var env = ProcessInfo.processInfo.environment
         env["OLLAMA_HOST"] = "127.0.0.1:\(port)"
+        env["OLLAMA_NUM_PARALLEL"] = "\(numParallel)"
+        env["OLLAMA_KEEP_ALIVE"] = "30m"
         proc.environment = env
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError = FileHandle.nullDevice
         try? proc.run()
         for _ in 0..<20 {
             try? await Task.sleep(for: .milliseconds(500))
-            if await isUp() { return }
+            if await isUp() {
+                let marker = try? JSONEncoder().encode(["parallel": numParallel])
+                try? marker?.write(to: markerURL)
+                return
+            }
         }
         throw DistillError.ollamaFailed("couldn't start the Ollama server")
+    }
+
+    /// Kill whatever owns our port (an out-of-date instance of our own server).
+    static func killServerOnPort() {
+        let lsof = Process()
+        lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        lsof.arguments = ["-ti", "tcp:\(port)"]
+        let pipe = Pipe()
+        lsof.standardOutput = pipe
+        try? lsof.run()
+        let out = pipe.fileHandleForReading.readDataToEndOfFile()
+        lsof.waitUntilExit()
+        for line in String(decoding: out, as: UTF8.self).split(separator: "\n") {
+            if let pid = Int32(line.trimmingCharacters(in: .whitespaces)) { kill(pid, SIGKILL) }
+        }
     }
 
     static func hasModel() async throws -> Bool {

@@ -106,8 +106,9 @@ enum HarnessRuntime {
         let generate: @convention(block) (String, String?) -> String = { prompt, model in
             blockingGenerate(prompt: prompt, model: model)
         }
-        let generateParallel: @convention(block) (String, String?) -> String = { promptsJSON, model in
-            blockingGenerateParallel(promptsJSON: promptsJSON, model: model)
+        let generateParallel: @convention(block) (String, String?, Int32) -> String = { promptsJSON, model, concurrency in
+            blockingGenerateParallel(promptsJSON: promptsJSON, model: model,
+                                     concurrency: Int(concurrency))
         }
         let status: @convention(block) (String) -> Void = { callbacks.status($0) }
         let fact: @convention(block) (String) -> Void = { callbacks.fact($0) }
@@ -138,8 +139,9 @@ enum HarnessRuntime {
             };
             const llm = {
                 generate: (prompt, model) => __generate(prompt, model || null),
-                generateParallel: (prompts, model) =>
-                    JSON.parse(__generateParallel(JSON.stringify(prompts), model || null)),
+                generateParallel: (prompts, model, concurrency) =>
+                    JSON.parse(__generateParallel(JSON.stringify(prompts), model || null,
+                                                  concurrency || 4)),
             };
             const ui = { status: __status, fact: __fact, progress: __progress };
             const log = __log;
@@ -182,7 +184,8 @@ enum HarnessRuntime {
         return output
     }
 
-    private static func blockingGenerateParallel(promptsJSON: String, model: String?) -> String {
+    private static func blockingGenerateParallel(promptsJSON: String, model: String?,
+                                                  concurrency: Int) -> String {
         guard let data = promptsJSON.data(using: .utf8),
               let prompts = try? JSONDecoder().decode([String].self, from: data) else {
             return "[]"
@@ -205,7 +208,7 @@ enum HarnessRuntime {
                         }
                     }
                 }
-                for _ in 0..<2 { add(&group) }
+                for _ in 0..<max(1, min(concurrency, OllamaClient.numParallel)) { add(&group) }
                 while let (i, out) = await group.next() {
                     outputs[i] = out
                     add(&group)

@@ -175,6 +175,18 @@ final class AppModel: ObservableObject {
 
     private func applyBuildProgress(_ p: DistillProgress) {
         guard case .building = stage else { return }
+        // Facts are independent events — never gate them on other fields.
+        if !p.latestInsights.isEmpty {
+            for insight in p.latestInsights {
+                insightFacts.append(insight.hasPrefix("- ") ? String(insight.dropFirst(2)) : insight)
+            }
+            let freshest = p.latestInsights[0]
+            factIndex = 0
+            withAnimation(.easeInOut(duration: 0.4)) {
+                currentFact = freshest.hasPrefix("- ")
+                    ? String(freshest.dropFirst(2)) : freshest
+            }
+        }
         if let done = p.downloadCompleted, let total = p.downloadTotal, total > 0 {
             distillStart = Self.extractSlice + Self.downloadSlice
             if downloadStart == nil { downloadStart = Date() }
@@ -186,29 +198,16 @@ final class AppModel: ObservableObject {
                 etaText = Self.eta(seconds: Double(total - done) / max(rate, 1))
             }
         } else if p.totalChunks > 0 {
+            // Progress ticks drive the bar and ETA; the harness owns statusText
+            // via explicit status events.
             chunkTimes.append(Date().timeIntervalSince(lastChunkAt))
             lastChunkAt = Date()
             let frac = Double(p.completedChunks) / Double(p.totalChunks)
-            progress = distillStart + (0.98 - distillStart) * frac
-            statusText = "Distilling your profile…"
+            progress = max(progress, distillStart + (0.98 - distillStart) * frac)
             let avg = chunkTimes.reduce(0, +) / Double(chunkTimes.count)
             etaText = Self.eta(seconds: avg * Double(p.totalChunks - p.completedChunks))
-            for insight in p.latestInsights {
-                insightFacts.append(insight.hasPrefix("- ") ? String(insight.dropFirst(2)) : insight)
-            }
-            if let freshest = p.latestInsights.first {
-                // Show what we just learned, immediately — the fact stream
-                // should feel like it's tracking the distillation.
-                factIndex = 0
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    currentFact = freshest.hasPrefix("- ")
-                        ? String(freshest.dropFirst(2)) : freshest
-                }
-            }
         } else if let status = p.status {
             statusText = status
-            etaText = nil
-            progress = max(progress, 0.98)
         }
     }
 

@@ -5,7 +5,7 @@
 // Architecture: evidence → merge → synthesize → write.
 // Local passes observe (no conclusions, no superlatives); the global synthesis
 // stages — the only stages that see everyone — judge.
-const HARNESS_VERSION = 4;
+const HARNESS_VERSION = 5;
 
 const CAPS = {
   persons: 25,
@@ -15,7 +15,7 @@ const CAPS = {
   evidenceChars: 700,
   obsPerTag: 40,
   timelineBatchChars: 9000,
-  parallel: 2, // informational; llm.generateParallel bounds concurrency host-side
+  parallel: 4, // matches the server's OLLAMA_NUM_PARALLEL (older binaries clamp to 2)
 };
 
 const TAXONOMY =
@@ -50,9 +50,9 @@ function gen(prompt, model) {
   }
   return out;
 }
-function genParallel(prompts, model) {
+function genParallel(prompts, model, concurrency) {
   llmCalls += prompts.length;
-  const outs = llm.generateParallel(prompts, model);
+  const outs = llm.generateParallel(prompts, model, concurrency);
   return outs.map((o) => {
     o = o || "";
     if (o.startsWith("__ERROR__") || o === "") {
@@ -335,11 +335,11 @@ function distill() {
   const evidenceByName = {};
   const observations = [];
   const eventMentions = [];
-  for (let i = 0; i < jobs.length; i += 2) {
-    const batch = jobs.slice(i, i + 2);
+  for (let i = 0; i < jobs.length; i += CAPS.parallel) {
+    const batch = jobs.slice(i, i + CAPS.parallel);
     const prompts = batch.map((c) => evidencePrompt(
       c, host.transcript(c.id, { maxChars: CAPS.transcriptChars })));
-    const outputs = genParallel(prompts);
+    const outputs = genParallel(prompts, null, CAPS.parallel);
     batch.forEach((c, j) => {
       const { signals, obs, events } = parseEvidence(outputs[j] || "", c.name);
       evidenceByName[c.name] = (evidenceByName[c.name] || []).concat(signals);
@@ -388,15 +388,18 @@ function distill() {
   // Stage 4a — persona synthesis (consumes the role graph).
   ui.status("Piecing together who you are…");
   const sectionBullets = {};
-  for (const tags of [["ABOUT", "COMM", "WORK"],
-                      ["INTERESTS", "HEALTH", "DAILY"],
-                      ["DATES", "VALUES", "ASSIST"]]) {
-    const out = gen(personaPrompt(tags, roleGraph, observations), "synthesis");
-    for (const [tag, bullet] of parseTagged(out, new Set(tags))) {
+  const sectionGroups = [["ABOUT", "COMM", "WORK"],
+                         ["INTERESTS", "HEALTH", "DAILY"],
+                         ["DATES", "VALUES", "ASSIST"]];
+  const personaOuts = genParallel(
+    sectionGroups.map((tags) => personaPrompt(tags, roleGraph, observations)),
+    "synthesis", 3);
+  sectionGroups.forEach((tags, i) => {
+    for (const [tag, bullet] of parseTagged(personaOuts[i] || "", new Set(tags))) {
       (sectionBullets[tag] = sectionBullets[tag] || []).push(bullet);
     }
     bump();
-  }
+  });
 
   // Stage 4t — timeline: merge event mentions, count corroborations.
   ui.status("Reconstructing your timeline…");
@@ -425,16 +428,22 @@ function distill() {
   // Stage 4b — relationship cards.
   const cards = [];
   const cardTargets = [...persons, ...groups];
-  for (const c of cardTargets) {
-    const a = c.isGroup ? { role: "Group chat", note: "" } : assignments[c.name];
-    const out = gen(cardPrompt(c, a.role, a.note, evidenceByName[c.name] || []));
-    const card = cleanCard(out, c.name, c.isGroup ? null : a.role);
-    if (card) {
-      cards.push(card);
-      const fb = card.split("\n").find((l) => l.startsWith("- "));
-      if (fb) ui.fact(`${c.name}: ${fb.slice(2)}`);
-    }
-    bump();
+  for (let i = 0; i < cardTargets.length; i += CAPS.parallel) {
+    const batch = cardTargets.slice(i, i + CAPS.parallel);
+    const outs = genParallel(batch.map((c) => {
+      const a = c.isGroup ? { role: "Group chat", note: "" } : assignments[c.name];
+      return cardPrompt(c, a.role, a.note, evidenceByName[c.name] || []);
+    }), null, CAPS.parallel);
+    batch.forEach((c, j) => {
+      const a = c.isGroup ? { role: "Group chat", note: "" } : assignments[c.name];
+      const card = cleanCard(outs[j] || "", c.name, c.isGroup ? null : a.role);
+      if (card) {
+        cards.push(card);
+        const fb = card.split("\n").find((l) => l.startsWith("- "));
+        if (fb) ui.fact(`${c.name}: ${fb.slice(2)}`);
+      }
+      bump();
+    });
   }
 
   // Stage 5 — polish + assemble.
