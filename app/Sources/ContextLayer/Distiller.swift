@@ -86,12 +86,21 @@ struct OllamaClient {
         }
     }
 
+    /// The weights download can legitimately run for hours on a slow
+    /// connection — never cap it at the shared session's 1h resource limit.
+    static let pullSession: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 300      // idle timeout between chunks
+        cfg.timeoutIntervalForResource = 86_400  // total transfer cap: 24h
+        return URLSession(configuration: cfg)
+    }()
+
     /// Pull the model, streaming download progress (first run only).
     static func pullModel(progress: @escaping @Sendable (String) -> Void) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/pull"))
         req.httpMethod = "POST"
         req.httpBody = try JSONSerialization.data(withJSONObject: ["model": model])
-        let (bytes, _) = try await session.bytes(for: req)
+        let (bytes, _) = try await pullSession.bytes(for: req)
         struct Line: Decodable {
             let status: String?; let total: Int64?; let completed: Int64?; let error: String?
         }
