@@ -5,7 +5,7 @@
 // Architecture: evidence → merge → synthesize → write.
 // Local passes observe (no conclusions, no superlatives); the global synthesis
 // stages — the only stages that see everyone — judge.
-const HARNESS_VERSION = 6;
+const HARNESS_VERSION = 7;
 
 const CAPS = {
   persons: 25,
@@ -358,6 +358,23 @@ function distill() {
   const evidenceByName = {};
   const observations = [];
   const eventMentions = [];
+
+  // First taste: one small fast call so an LLM insight lands in ~15s,
+  // long before the first full evidence batch completes.
+  if (persons.length) {
+    const first = persons[0];
+    const quick = gen(`${NO_CONCLUSIONS}
+
+Read this short excerpt of my conversation with ${first.name} and output exactly 2-3 OBS lines — quick observations about Me, the most interesting things this excerpt shows:
+OBS: <TAG> | <explicit or inferred> | <complete sentence about Me>
+Tags: ABOUT COMM WORK INTERESTS HEALTH DAILY DATES VALUES ASSIST
+
+EXCERPT:
+${host.transcript(first.id, { maxChars: 2500 })}`);
+    const taste = parseEvidence(quick, first.name);
+    observations.push(...taste.obs);
+    for (const o of taste.obs.slice(0, 2)) ui.fact(o.text);
+  }
   for (let i = 0; i < jobs.length; i += CAPS.parallel) {
     const batch = jobs.slice(i, i + CAPS.parallel);
     // A stat nugget for someone in this batch, shown while the model reads.
