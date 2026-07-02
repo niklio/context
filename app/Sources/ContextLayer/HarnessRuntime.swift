@@ -94,6 +94,12 @@ enum HarnessRuntime {
         }
 
         let logURL = supportDir.appendingPathComponent("harness.log")
+        // Keep the previous run's log — post-mortems need it after a new run starts.
+        let prevURL = supportDir.appendingPathComponent("harness.prev.log")
+        if FileManager.default.fileExists(atPath: logURL.path) {
+            try? FileManager.default.removeItem(at: prevURL)
+            try? FileManager.default.copyItem(at: logURL, to: prevURL)
+        }
         try? "runtime: \(corpus.chats.count) chats extracted, \(corpus.names.count) contacts resolved, harness origin: \(origin)\n"
             .write(to: logURL, atomically: true, encoding: .utf8)
 
@@ -103,6 +109,11 @@ enum HarnessRuntime {
             corpus.transcript(id: id, optsJSON: optsJSON)
         }
         let headlines: @convention(block) () -> String = { corpus.headlinesJSON }
+        let owner: @convention(block) () -> String = {
+            let name = NSFullUserName()
+            let data = (try? JSONSerialization.data(withJSONObject: ["name": name])) ?? Data("{}".utf8)
+            return String(decoding: data, as: UTF8.self)
+        }
         let generate: @convention(block) (String, String?) -> String = { prompt, model in
             blockingGenerate(prompt: prompt, model: model)
         }
@@ -124,6 +135,7 @@ enum HarnessRuntime {
         ctx.setObject(chatsJSON, forKeyedSubscript: "__chats" as NSString)
         ctx.setObject(transcript, forKeyedSubscript: "__transcript" as NSString)
         ctx.setObject(headlines, forKeyedSubscript: "__headlines" as NSString)
+        ctx.setObject(owner, forKeyedSubscript: "__owner" as NSString)
         ctx.setObject(generate, forKeyedSubscript: "__generate" as NSString)
         ctx.setObject(generateParallel, forKeyedSubscript: "__generateParallel" as NSString)
         ctx.setObject(status, forKeyedSubscript: "__status" as NSString)

@@ -424,7 +424,11 @@ final class AppModel: ObservableObject {
 
     private func reportPayload(trigger: String) -> [String: String] {
         let logURL = HarnessRuntime.supportDir.appendingPathComponent("harness.log")
-        let log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? "(no harness.log)"
+        var log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? "(no harness.log)"
+        let prevURL = HarnessRuntime.supportDir.appendingPathComponent("harness.prev.log")
+        if let prev = try? String(contentsOf: prevURL, encoding: .utf8) {
+            log += "\n=== PREVIOUS RUN ===\n" + String(prev.suffix(40_000))
+        }
         var error = stageDescription
         if case .failed(let m) = stage { error = m }
         return [
