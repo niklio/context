@@ -73,6 +73,19 @@ export default {
       return json({ ok: true });
     }
 
+    // Failure reports from the app: diagnostics only (error + harness.log +
+    // environment), never profile content. 30-day TTL, pulled via wrangler.
+    if (url.pathname === "/api/reports" && request.method === "POST") {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+      const report = JSON.stringify(body);
+      if (report.length > 200_000) return json({ error: "report too large" }, 413);
+      const id = new Date().toISOString().replace(/[:.]/g, "-") + "-" + randomHex(3);
+      await env.PROFILES.put("report:" + id, report,
+        { expirationTtl: 30 * 24 * 3600 });
+      return json({ ok: true, id });
+    }
+
     // Profile deletion (the id itself is the bearer secret).
     const del = url.pathname.match(/^\/api\/profiles\/([a-f0-9]{30,50})$/);
     if (del && request.method === "DELETE") {

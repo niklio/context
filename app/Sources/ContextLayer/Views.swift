@@ -279,6 +279,28 @@ struct MenuContent: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Try again") { model.retry() }
                 .buttonStyle(PrimaryButtonStyle())
+            switch model.reportState {
+            case .idle:
+                Button("Report to developer") { model.reportFailure() }
+                    .buttonStyle(GhostButtonStyle())
+                    .frame(maxWidth: .infinity)
+            case .sending:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Sending report…")
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                }
+                .frame(maxWidth: .infinity)
+            case .sent(let id):
+                Text("Reported — reference \(id.suffix(6)). Only diagnostics were sent, never your messages or profile.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .failed:
+                Button("Report failed — try again") { model.reportFailure() }
+                    .buttonStyle(GhostButtonStyle(tint: Theme.orange))
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 

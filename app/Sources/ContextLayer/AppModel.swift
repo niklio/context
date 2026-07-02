@@ -407,7 +407,48 @@ final class AppModel: ObservableObject {
         if case .needsGrant = stage { startGrantPolling() } else { start() }
     }
 
+    // MARK: - Failure reporting
+
+    enum ReportState: Equatable { case idle, sending, sent(String), failed }
+    @Published var reportState: ReportState = .idle
+
+    func reportFailure() {
+        guard case .failed(let message) = stage, reportState != .sending else { return }
+        reportState = .sending
+        Task {
+            do {
+                let logURL = HarnessRuntime.supportDir.appendingPathComponent("harness.log")
+                let log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? "(no harness.log)"
+                let payload: [String: String] = [
+                    "error": message,
+                    "log": String(log.suffix(150_000)),
+                    "appVersion": Bundle.main.object(
+                        forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
+                    "build": Bundle.main.object(
+                        forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-",
+                    "os": ProcessInfo.processInfo.operatingSystemVersionString,
+                    "model": OllamaClient.model,
+                    "synthesisModel": OllamaClient.synthesisModel,
+                    "mode": mode.rawValue,
+                ]
+                var req = URLRequest(url: URL(string: "\(Self.apiBase)/api/reports")!)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try JSONEncoder().encode(payload)
+                let (data, resp) = try await URLSession.shared.data(for: req)
+                struct Ack: Decodable { let ok: Bool; let id: String }
+                guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                      let ack = try? JSONDecoder().decode(Ack.self, from: data), ack.ok
+                else { throw URLError(.badServerResponse) }
+                reportState = .sent(ack.id)
+            } catch {
+                reportState = .failed
+            }
+        }
+    }
+
     func retry() {
+        reportState = .idle
         if profile.isEmpty {
             if ChatDB.canRead(path: dbPath) { start() }
             else { stage = .needsGrant; startGrantPolling() }
