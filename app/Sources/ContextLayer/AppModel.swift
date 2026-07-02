@@ -106,6 +106,8 @@ final class AppModel: ObservableObject {
     private static let downloadSlice = 0.49
 
     func start() {
+        guard stage != .building else { return }
+        clearPending()          // a regenerate supersedes any queued update
         stage = .building
         progress = 0
         statusText = "Reading your messages…"

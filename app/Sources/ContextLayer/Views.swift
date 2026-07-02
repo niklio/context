@@ -46,13 +46,20 @@ struct MenuContent: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             Text("Context").font(.system(size: 15, weight: .bold))
             Spacer()
-            Button { NSApp.terminate(nil) } label: {
-                Image(systemName: "power")
+            Menu {
+                Button("Regenerate profile") { model.start() }
+                    .disabled(model.stage == .building)
+                Divider()
+                Button("Quit Context") { NSApp.terminate(nil) }
+            } label: {
+                Image(systemName: "gearshape.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.muted)
             }
-            .buttonStyle(.plain)
-            .help("Quit Context")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Settings")
         }
     }
 
@@ -215,18 +222,24 @@ struct MenuContent: View {
     // MARK: - Shared pieces
 
     private func snippetText(_ text: String) -> some View {
-        (Text(AppModel.snippet(of: text))
-            + Text(" see more")
-                .foregroundColor(Theme.blue)
-                .fontWeight(.semibold))
+        // "see more" is a real inline link so only IT is tappable, not the
+        // whole snippet. The custom scheme is intercepted below.
+        var snippet = AttributedString(AppModel.snippet(of: text))
+        snippet.foregroundColor = Theme.body
+        var more = AttributedString(" see more")
+        more.foregroundColor = Theme.blue
+        more.font = .system(size: 13, weight: .semibold)
+        more.link = URL(string: "contextlayer://review")!
+        return Text(snippet + more)
             .font(.system(size: 13))
-            .foregroundStyle(Theme.body)
             .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
-            .onTapGesture {
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == "contextlayer" else { return .systemAction }
                 openWindow(id: "review")
                 NSApp.activate(ignoringOtherApps: true)
-            }
+                return .handled
+            })
     }
 
     private var lgtmButton: some View {
