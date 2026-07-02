@@ -3,13 +3,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION=0.5.2
+VERSION=0.5.3
 
 ./vendor/fetch-ollama.sh
 
 swift build -c release
 
-APP=build/ContextLayer.app
+APP=build/Context.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/ContextLayer "$APP/Contents/MacOS/ContextLayer"
@@ -26,11 +26,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleExecutable</key><string>ContextLayer</string>
     <key>CFBundleIdentifier</key><string>com.nikliolios.contextlayer</string>
-    <key>CFBundleName</key><string>Context Layer</string>
-    <key>CFBundleDisplayName</key><string>Context Layer</string>
+    <key>CFBundleName</key><string>Context</string>
+    <key>CFBundleDisplayName</key><string>Context</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>11</string>
+    <key>CFBundleVersion</key><string>12</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
@@ -45,6 +45,6 @@ plutil -lint "$APP/Contents/Info.plist"
 # rebuilds on the same machine. Real Developer ID signing comes later.
 codesign --force --sign - --identifier com.nikliolios.contextlayer "$APP"
 
-(cd build && rm -f ContextLayer-*.zip && zip -qry "ContextLayer-${VERSION}.zip" ContextLayer.app)
+(cd build && rm -f ContextLayer-*.zip Context-*.zip && zip -qry "Context-${VERSION}.zip" Context.app)
 echo "built: $PWD/$APP"
-echo "zip:   $PWD/build/ContextLayer-${VERSION}.zip ($(du -h build/ContextLayer-${VERSION}.zip | cut -f1))"
+echo "zip:   $PWD/build/Context-${VERSION}.zip ($(du -h build/Context-${VERSION}.zip | cut -f1))"

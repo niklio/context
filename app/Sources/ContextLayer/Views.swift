@@ -69,7 +69,7 @@ struct MenuContent: View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 step(1, Text("Open the button below"))
-                step(2, Text("Turn on ") + Text("Context Layer").bold() + Text(" in the list"))
+                step(2, Text("Turn on ") + Text("Context").bold() + Text(" in the list"))
                 step(3, Text("Come back — it starts on its own"))
             }
             .padding(.bottom, 4)

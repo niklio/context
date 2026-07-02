@@ -16,7 +16,7 @@ export default {
     const url = new URL(request.url);
 
     // Releases live in R2 (too big for static assets).
-    const zip = url.pathname.match(/^\/(ContextLayer-[\w.]+\.zip)$/);
+    const zip = url.pathname.match(/^\/((?:ContextLayer|Context)-[\w.]+\.zip)$/);
     if (zip) {
       const obj = await env.RELEASES.get(zip[1]);
       if (!obj) return new Response("not found", { status: 404 });
