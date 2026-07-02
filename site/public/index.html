@@ -6,16 +6,11 @@
 <title>context — your AI should know you</title>
 <meta name="description" content="Turn your own message history into a portable profile for any AI assistant. Local-first: nothing leaves your Mac.">
 <style>
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light; }
   body {
     font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     max-width: 620px; margin: 0 auto; padding: 72px 24px 96px;
-    color: #1d1d1f; background: #fff;
-  }
-  @media (prefers-color-scheme: dark) {
-    body { color: #e8e8ed; background: #111; }
-    .steps, code { background: #1c1c1e; }
-    .muted { color: #98989d; }
+    color: #2b2620; background: #faf6ec;
   }
   h1 { font-size: 2.4em; margin: 0 0 4px; letter-spacing: -0.02em; }
   .tagline { font-size: 1.25em; margin: 0 0 32px; }
@@ -28,13 +23,13 @@
   .btn:hover { background: #0077ed; }
   .sub { font-size: .85em; margin-top: 10px; }
   .steps {
-    background: #f5f5f7; border-radius: 12px; padding: 20px 24px;
+    background: #f1ead9; border-radius: 12px; padding: 20px 24px;
     margin: 40px 0; font-size: .95em;
   }
   .steps ol { margin: 8px 0 0; padding-left: 20px; }
   .steps li { margin: 6px 0; }
   code {
-    background: #f5f5f7; padding: 2px 6px; border-radius: 5px;
+    background: #f1ead9; padding: 2px 6px; border-radius: 5px;
     font-size: .85em;
   }
   a { color: #0071e3; text-decoration: none; }
@@ -66,8 +61,10 @@
   <div class="steps">
     <strong>Install</strong>
     <ol>
-      <li>Unzip, drag <strong>Context Layer</strong> to Applications, then
-          right-click&nbsp;→&nbsp;Open <span class="muted">(unsigned beta)</span>.</li>
+      <li>Unzip, drag <strong>Context Layer</strong> to Applications and open it.
+          macOS will block the first launch <span class="muted">(unsigned
+          beta)</span>: go to System&nbsp;Settings&nbsp;→&nbsp;Privacy&nbsp;&amp;&nbsp;Security,
+          scroll down, click <strong>Open&nbsp;Anyway</strong>.</li>
       <li>Install <a href="https://ollama.com">Ollama</a> if you don't have it —
           the app handles the rest, including the one-time model download.</li>
       <li>Grant Full Disk Access when the app walks you through it
