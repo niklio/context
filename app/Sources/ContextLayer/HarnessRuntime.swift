@@ -94,7 +94,8 @@ enum HarnessRuntime {
         }
 
         let logURL = supportDir.appendingPathComponent("harness.log")
-        try? "".write(to: logURL, atomically: true, encoding: .utf8)
+        try? "runtime: \(corpus.chats.count) chats extracted, \(corpus.names.count) contacts resolved\n"
+            .write(to: logURL, atomically: true, encoding: .utf8)
 
         // ---- host bridge (JSON-string boundary keeps types simple) ---------
         let chatsJSON: @convention(block) () -> String = { corpus.chatsJSON }
@@ -197,8 +198,11 @@ enum HarnessRuntime {
                     guard next < prompts.count else { return }
                     let i = next; next += 1
                     g.addTask {
-                        let out = (try? await OllamaClient.generate(prompt: prompts[i], model: resolved)) ?? ""
-                        return (i, out)
+                        do {
+                            return (i, try await OllamaClient.generate(prompt: prompts[i], model: resolved))
+                        } catch {
+                            return (i, "__ERROR__: \(error.localizedDescription)")
+                        }
                     }
                 }
                 for _ in 0..<2 { add(&group) }
@@ -221,6 +225,10 @@ struct CorpusIndex {
     let chats: [Chat]
     let names: [String: String]
     let headlines: [String]
+
+    private func finite(_ x: Double) -> Double {
+        x.isFinite ? (x * 100).rounded() / 100 : 0
+    }
 
     var chatsJSON: String {
         var groupNamesByMember: [String: [String]] = [:]
@@ -259,9 +267,9 @@ struct CorpusIndex {
                     "tableRow": stats.tableRow,
                     "spanDays": stats.spanDays,
                     "daysSinceLast": stats.daysSinceLast,
-                    "perWeek": stats.perWeek,
-                    "myShare": stats.myShare,
-                    "myInitiationShare": stats.myInitiationShare,
+                    "perWeek": finite(stats.perWeek),
+                    "myShare": finite(stats.myShare),
+                    "myInitiationShare": finite(stats.myInitiationShare),
                     "groups": stats.groups,
                 ],
             ])

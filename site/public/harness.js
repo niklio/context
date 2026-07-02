@@ -5,7 +5,7 @@
 // Architecture: evidence → merge → synthesize → write.
 // Local passes observe (no conclusions, no superlatives); the global synthesis
 // stages — the only stages that see everyone — judge.
-const HARNESS_VERSION = 3;
+const HARNESS_VERSION = 4;
 
 const CAPS = {
   persons: 25,
@@ -38,6 +38,36 @@ const SECTIONS = [
 const VALID_TAGS = new Set(SECTIONS.map((s) => s[0]));
 
 // ---------------------------------------------------------------- helpers
+
+let llmErrors = 0, llmCalls = 0, firstLlmError = null;
+function gen(prompt, model) {
+  llmCalls++;
+  const out = llm.generate(prompt, model) || "";
+  if (out.startsWith("__ERROR__") || out === "") {
+    llmErrors++;
+    if (!firstLlmError && out) firstLlmError = out.slice(0, 200);
+    return "";
+  }
+  return out;
+}
+function genParallel(prompts, model) {
+  llmCalls += prompts.length;
+  const outs = llm.generateParallel(prompts, model);
+  return outs.map((o) => {
+    o = o || "";
+    if (o.startsWith("__ERROR__") || o === "") {
+      llmErrors++;
+      if (!firstLlmError && o) firstLlmError = o.slice(0, 200);
+      return "";
+    }
+    return o;
+  });
+}
+function assertLlmHealthy(stage) {
+  if (llmCalls >= 4 && llmErrors / llmCalls > 0.5) {
+    throw new Error(`local model failing at stage "${stage}" (${llmErrors}/${llmCalls} calls failed): ${firstLlmError || "empty responses"}`);
+  }
+}
 
 function isFiller(s) {
   const l = s.toLowerCase();
@@ -264,6 +294,10 @@ ${section}`;
 function distill() {
   log(`harness v${HARNESS_VERSION} starting`);
   const all = host.chats();
+  log(`runtime handed ${all.length} conversations`);
+  if (!all.length) {
+    throw new Error("the runtime handed the harness 0 conversations — corpus serialization problem in the app");
+  }
 
   // Stage 0 — classification (heuristic kinds precomputed by the host).
   const groups = all.filter((c) => c.isGroup)
@@ -274,7 +308,7 @@ function distill() {
   if (ambiguous.length) {
     const listing = ambiguous.map((c, i) =>
       `${i + 1}. ${c.name}: ${(c.sampleIncoming || []).join(" ⏐ ")}`).join("\n");
-    const out = llm.generate(
+    const out = gen(
       `For each numbered sender below, decide if it is a real PERSON I know, or a BUSINESS/automated sender (airline, bank, store, appointment reminders, verification codes, delivery notices). Output one line per number, exactly:\n<number>. PERSON  or  <number>. BUSINESS\n\n${listing}`);
     const verdicts = {};
     for (const line of out.split("\n")) {
@@ -288,7 +322,11 @@ function distill() {
   persons = persons.sort((a, b) => b.messageCount - a.messageCount).slice(0, CAPS.persons);
   businesses = businesses.sort((a, b) => b.messageCount - a.messageCount).slice(0, CAPS.businesses);
 
+  log(`classified: ${persons.length} persons, ${groups.length} groups, ${businesses.length} businesses (of ${all.length})`);
   const jobs = [...persons, ...groups, ...businesses];
+  if (!jobs.length) {
+    throw new Error(`classification produced 0 usable conversations from ${all.length} — check harness.log`);
+  }
   const totalUnits = jobs.length + persons.length + groups.length + 6;
   let completed = 0;
   const bump = () => ui.progress(++completed, totalUnits);
@@ -301,7 +339,7 @@ function distill() {
     const batch = jobs.slice(i, i + 2);
     const prompts = batch.map((c) => evidencePrompt(
       c, host.transcript(c.id, { maxChars: CAPS.transcriptChars })));
-    const outputs = llm.generateParallel(prompts);
+    const outputs = genParallel(prompts);
     batch.forEach((c, j) => {
       const { signals, obs, events } = parseEvidence(outputs[j] || "", c.name);
       evidenceByName[c.name] = (evidenceByName[c.name] || []).concat(signals);
@@ -312,6 +350,9 @@ function distill() {
     });
   }
 
+  log(`evidence: ${observations.length} observations, ${eventMentions.length} event mentions, signals for ${Object.keys(evidenceByName).length} people; llm errors ${llmErrors}/${llmCalls}`);
+  assertLlmHealthy("evidence");
+
   // Stage 3 — relationship synthesis: the one pass that sees everyone.
   ui.status("Figuring out who's who…");
   const entries = persons.map((c) => {
@@ -319,7 +360,7 @@ function distill() {
     return `== ${c.name}\n${c.stats.tableRow}${ev ? "\nEvidence: " + ev : ""}`;
   }).join("\n");
   const rolesOut = persons.length
-    ? llm.generate(rolesPrompt(entries), "synthesis") : "";
+    ? gen(rolesPrompt(entries), "synthesis") : "";
   const assignments = {};
   const knownNames = new Set(persons.map((c) => c.name));
   for (const line of rolesOut.split("\n")) {
@@ -350,7 +391,7 @@ function distill() {
   for (const tags of [["ABOUT", "COMM", "WORK"],
                       ["INTERESTS", "HEALTH", "DAILY"],
                       ["DATES", "VALUES", "ASSIST"]]) {
-    const out = llm.generate(personaPrompt(tags, roleGraph, observations), "synthesis");
+    const out = gen(personaPrompt(tags, roleGraph, observations), "synthesis");
     for (const [tag, bullet] of parseTagged(out, new Set(tags))) {
       (sectionBullets[tag] = sectionBullets[tag] || []).push(bullet);
     }
@@ -365,7 +406,7 @@ function distill() {
   const flushBatch = () => {
     if (!batch.length) return;
     const list = batch.map((m) => `${m.date} | ${m.text} | seen in: ${m.source}`).join("\n");
-    const out = llm.generate(timelinePrompt(list), "synthesis");
+    const out = gen(timelinePrompt(list), "synthesis");
     for (let raw of out.split("\n")) {
       let e = raw.trim();
       if (e.startsWith("- ")) e = e.slice(2);
@@ -386,7 +427,7 @@ function distill() {
   const cardTargets = [...persons, ...groups];
   for (const c of cardTargets) {
     const a = c.isGroup ? { role: "Group chat", note: "" } : assignments[c.name];
-    const out = llm.generate(cardPrompt(c, a.role, a.note, evidenceByName[c.name] || []));
+    const out = gen(cardPrompt(c, a.role, a.note, evidenceByName[c.name] || []));
     const card = cleanCard(out, c.name, c.isGroup ? null : a.role);
     if (card) {
       cards.push(card);
@@ -400,7 +441,7 @@ function distill() {
   let relations = cards.join("\n");
   if (relations.length && relations.length < 12000 && cards.length > 1) {
     ui.status("Double-checking claims…");
-    const polished = llm.generate(polishPrompt(relations, roleGraph), "synthesis");
+    const polished = gen(polishPrompt(relations, roleGraph), "synthesis");
     if (polished.includes("###") && polished.length > relations.length / 2) {
       relations = polished.trim();
     }
@@ -423,6 +464,10 @@ function distill() {
       out.push(...timeline.map((t) => `- ${t}`));
     }
   }
-  log(`harness v${HARNESS_VERSION} done: ${cards.length} cards, ${timeline.length} timeline entries`);
-  return out.join("\n").trim();
+  const profile = out.join("\n").trim();
+  log(`harness v${HARNESS_VERSION} done: ${cards.length} cards, ${timeline.length} timeline entries, ${profile.length} chars; llm errors ${llmErrors}/${llmCalls}`);
+  if (profile.length <= 40) {
+    throw new Error(`pipeline produced an empty profile: ${persons.length} persons, ${observations.length} observations, ${cards.length} cards, llm errors ${llmErrors}/${llmCalls}${firstLlmError ? " — first error: " + firstLlmError : ""}`);
+  }
+  return profile;
 }

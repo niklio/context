@@ -3,12 +3,13 @@
   <channel>
     <title>Context</title>
     <item>
-      <title>0.8.0</title>
-      <pubDate>Thu, 02 Jul 2026 10:03:02 -0400</pubDate>
-      <sparkle:version>20</sparkle:version>
-      <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+      <title>0.8.1</title>
+      <pubDate>Thu, 02 Jul 2026 14:56:02 -0400</pubDate>
+      <sparkle:version>21</sparkle:version>
+      <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://context.nikliolios.com/Context-0.8.0.dmg" sparkle:edSignature="u5wyI/iRyZmvsJnuLnKop46tV8tuMez+5zx4N/JhAbMEeEtTOuWQh1oiTzMs+4nc0tM0wZT3YjfpwKiQgVNVBw==" length="18559273" type="application/octet-stream"/>
+      <sparkle:releaseNotesLink>https://context.nikliolios.com/</sparkle:releaseNotesLink>
+      <enclosure url="https://context.nikliolios.com/Context-0.8.1.dmg" sparkle:edSignature="3EsSFm856oHVrVncS9GocYLp8ELxzEC1rPnb8Bm0RBaxuf/u1tuVSTruxCvKyOQ36kP5kHKbCydQMvEP7OWoDA==" length="18561026" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
