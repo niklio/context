@@ -45,6 +45,6 @@ plutil -lint "$APP/Contents/Info.plist"
 # rebuilds on the same machine. Real Developer ID signing comes later.
 codesign --force --sign - --identifier com.nikliolios.contextlayer "$APP"
 
-(cd build && rm -f ContextLayer-*.zip Context-*.zip && zip -qry "Context-${VERSION}.zip" Context.app)
+(cd build && rm -f ContextLayer-*.zip(N) Context-*.zip(N) && zip -qry "Context-${VERSION}.zip" Context.app)
 echo "built: $PWD/$APP"
 echo "zip:   $PWD/build/Context-${VERSION}.zip ($(du -h build/Context-${VERSION}.zip | cut -f1))"
