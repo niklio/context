@@ -51,11 +51,11 @@ struct MenuContent: View {
                 Button("Regenerate profile") { model.start() }
                     .disabled(model.stage == .building)
                 Divider()
-                Button("About Context") {
+                Button("About") {
                     NSApp.activate(ignoringOtherApps: true)
                     NSApp.orderFrontStandardAboutPanel(nil)
                 }
-                Button("Quit Context") { NSApp.terminate(nil) }
+                Button("Quit") { NSApp.terminate(nil) }
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 12.5, weight: .light))
