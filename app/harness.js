@@ -6,7 +6,7 @@
 // cards with a fixed viewpoint, roster scored by volume×recency with evidence
 // gates, deterministic role hints (surname, contact decorations, owner name),
 // business lexicon, lenient event dates. Numbers live in code, never in prose.
-const HARNESS_VERSION = 10;
+const HARNESS_VERSION = 11;
 
 const CAPS = {
   persons: 18,
@@ -141,12 +141,23 @@ function normDate(d) {
 
 function parseEvidence(output, source) {
   const signals = [], obs = [], events = [];
+  let section = null;   // sticky section from headers like "**SIGNAL Lines (5-12)**"
   for (let raw of output.split("\n")) {
-    let line = raw.trim().replace(/^[-•*]+\s*/, "").replace(/\*\*/g, "").trim();
-    const m = line.match(/^(OBS|SIGNAL|HYPOTHESIS|EVENT)\s*[:\-–]\s*(.*)$/i);
-    if (!m) continue;
-    const kind = m[1].toUpperCase();
-    const body = m[2].trim();
+    let line = raw.trim().replace(/\*\*/g, "").replace(/^[-•*]+\s*/, "")
+      .replace(/^\d+[.)]\s*/, "").trim();
+    if (!line) continue;
+    let kind = null, body = null;
+    const m = line.match(/^(OBS|SIGNAL|HYPOTHESIS|EVENT)S?\s*[:\-–]\s*(.*)$/i);
+    if (m) {
+      kind = m[1].toUpperCase(); body = m[2].trim();
+    } else {
+      // Header line? ("SIGNAL Lines (5-12)", "Hypotheses:", "Events") → set section
+      const hm = line.match(/^(OBS|SIGNAL|HYPOTHESIS|EVENT)(S|ES)?\b.{0,20}$/i);
+      if (hm && line.length < 40) { section = hm[1].toUpperCase(); continue; }
+      if (section && line.length > 8) { kind = section; body = line; }
+      else continue;
+    }
+    if (!body || !kind) continue;
     if (kind === "SIGNAL" && body.length > 8) signals.push(body);
     else if (kind === "HYPOTHESIS" && body.length > 8) signals.push("hypothesis: " + body);
     else if (kind === "EVENT") {
@@ -243,7 +254,7 @@ Conversation with ${normalizeName(chat.name)}${chat.isGroup ? " (group chat)" : 
 SIGNAL: <one concrete piece of evidence: how we address each other ("mom", "babe", pet names), topics we discuss (wedding planning, kids' schedules, work projects, training runs), events we've shared (dinners, trips, races), emotional register (venting, jokes, advice), logistics we coordinate (same home, family gatherings)>
 HYPOTHESIS: <a possible relationship role from: ${TAXONOMY}> — <the evidence for it> (several allowed; uncertainty fine)
 
-Output 5-12 SIGNAL lines and 1-3 HYPOTHESIS lines, nothing else. Quote short phrases as evidence where helpful.
+FORMAT (strict): every single line of your output must begin with "SIGNAL: " or "HYPOTHESIS: ". No introductions, no headers, no numbering, no markdown, no commentary. Aim for 5-12 SIGNAL lines and 1-3 HYPOTHESIS lines. Quote short phrases as evidence where helpful.
 
 TRANSCRIPT:
 ${transcript}`;
@@ -264,7 +275,7 @@ Tags: ABOUT (name, job, employer, city, life stage), COMM (how I write here), WO
 EVENT: <date> | <what happened> | <explicit or inferred>
 Events are things that HAPPENED in my life: meetups, dinners, trips, races, moves, milestones, weddings, job changes — small or big. Date them from the [YYYY-MM-DD] message timestamps ("yesterday"/"last Saturday" resolve relative to that message's date). Use YYYY-MM-DD when known, else YYYY-MM, else YYYY.
 
-Output ONLY OBS and EVENT lines. Specifics beat generalities.
+FORMAT (strict): every single line of your output must begin with "OBS: " or "EVENT: ". No introductions, no headers, no numbering, no markdown, no commentary. Specifics beat generalities.
 
 TRANSCRIPT:
 ${transcript}`;
@@ -328,7 +339,7 @@ function timelinePrompt(mentionList) {
   return `Below are mentions of real-world events from my life, gathered from different conversations, sorted by date. Merge into a clean chronological timeline:
 - Mentions of the SAME event become ONE entry; if it appeared in 2+ distinct conversations, append " (corroborated in N conversations)".
 - Keep small events (a breakfast, a ride) AND big ones (weddings, moves, job changes). Drop non-events and unresolved plans.
-- One line per event: \`<date> — <event>\`, chronological. Nothing else.
+- One line per event: \`<date> — <event>\`, chronological. Output AT MOST one line per input mention — merging only shrinks the list, never grows it. Never invent events. Nothing else.
 
 ${mentionList}`;
 }
@@ -475,6 +486,13 @@ function distill() {
       log(`  sample: ${(outs[0] || "(empty)").slice(0, 300).replace(/\n/g, " ⏎ ")}`);
     }
   }
+  // Pool persona observations into per-person evidence: cards and roles
+  // should never starve because one pass had a formatting bad day.
+  for (const o of observations) {
+    if (evidenceByName[o.source]) {
+      evidenceByName[o.source].push("observed: " + o.text);
+    }
+  }
   log(`evidence totals: ${observations.length} obs, ${eventMentions.length} events, signals for ${Object.keys(evidenceByName).length}`);
 
   // ---- Stage 3: relationship synthesis (sees everyone, batched) -----------
@@ -537,7 +555,16 @@ function distill() {
   // ---- Stage 4t: timeline ---------------------------------------------------
   ui.status("Reconstructing your timeline…");
   const timeline = [];
-  const sorted = eventMentions.sort((a, b) => a.date.localeCompare(b.date));
+  const seenMention = new Set();
+  const banal = /\b(test|sent (a |an )?(message|text|email)|reacted|replied|responded|group chat|checked in)\b/i;
+  const deduped = eventMentions.filter((m) => {
+    if (banal.test(m.text)) return false;
+    const k = m.date + "|" + m.text.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 60);
+    if (seenMention.has(k)) return false;
+    seenMention.add(k);
+    return true;
+  });
+  const sorted = deduped.sort((a, b) => a.date.localeCompare(b.date));
   let tBatch = [], tChars = 0;
   const flush = () => {
     if (!tBatch.length) return;
@@ -556,7 +583,24 @@ function distill() {
     tBatch.push(m); tChars += m.text.length + 30;
   }
   flush();
-  log(`timeline: ${timeline.length} entries from ${eventMentions.length} mentions`);
+  // Final dedupe + cap: prefer corroborated and specific entries.
+  const seenEntry = new Set();
+  let finalTimeline = timeline.filter((e) => {
+    if (banal.test(e)) return false;
+    const k = e.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 70);
+    if (seenEntry.has(k)) return false;
+    seenEntry.add(k);
+    return true;
+  });
+  if (finalTimeline.length > 120) {
+    const scored = finalTimeline.map((e, i) => ({ e, i,
+      s: (/corroborated/.test(e) ? 2 : 0) + Math.min(e.length / 60, 1) }));
+    scored.sort((a, b) => b.s - a.s);
+    const keep = new Set(scored.slice(0, 120).map((x) => x.i));
+    finalTimeline = finalTimeline.filter((_, i) => keep.has(i));
+  }
+  timeline.length = 0; timeline.push(...finalTimeline);
+  log(`timeline: ${timeline.length} entries from ${eventMentions.length} mentions (${deduped.length} after dedupe)`);
   if (timeline.length) ui.fact(timeline[timeline.length - 1]);
   bump();
 
