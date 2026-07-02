@@ -119,7 +119,8 @@ function mdToHtml(md) {
   for (const raw of lines) {
     const line = raw.trimEnd();
     if (!line.trim()) { flush(); closeList(); continue; }
-    if (line.startsWith("## ")) { flush(); closeList(); html += `<h2>${esc(line.slice(3))}</h2>`; }
+    if (line.startsWith("### ")) { flush(); closeList(); html += `<h3>${esc(line.slice(4))}</h3>`; }
+    else if (line.startsWith("## ")) { flush(); closeList(); html += `<h2>${esc(line.slice(3))}</h2>`; }
     else if (line.startsWith("# ")) { flush(); closeList(); html += `<h1>${esc(line.slice(2))}</h1>`; }
     else if (line.startsWith("- ")) {
       flush(); if (!list) { html += "<ul>"; list = true; }
@@ -143,6 +144,7 @@ const STYLE = `
   .card { background: #fffdf6; border: 1.5px solid #e7dcc2; border-radius: 16px;
           padding: 8px 24px 20px; margin: 20px 0; }
   .card h1 { font-size: 1.3em; } .card h2 { font-size: 1.02em; margin: 18px 0 6px; }
+  .card h3 { font-size: .95em; margin: 14px 0 3px; }
   .card p, .card li { font-size: .95em; }
   .conn { display: flex; align-items: center; justify-content: space-between;
           background: #fffdf6; border: 1.5px solid #e7dcc2; border-radius: 14px;

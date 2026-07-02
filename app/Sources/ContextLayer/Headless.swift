@@ -27,8 +27,7 @@ enum Headless {
 
             guard distill else { exit(0) }
 
-            let chunks = Distiller.buildChunks(result)
-            print("distilling \(chunks.count) chunk(s) with \(OllamaClient.model) (local) …")
+            print("distilling with \(OllamaClient.model) (local) …")
             let semaphore = DispatchSemaphore(value: 0)
             Task {
                 do {
