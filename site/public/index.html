@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>context — your AI should know you</title>
+<meta name="description" content="Turn your own message history into a portable profile for any AI assistant. Local-first: nothing leaves your Mac.">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 620px; margin: 0 auto; padding: 72px 24px 96px;
+    color: #1d1d1f; background: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e8e8ed; background: #111; }
+    .steps, code { background: #1c1c1e; }
+    .muted { color: #98989d; }
+  }
+  h1 { font-size: 2.4em; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .tagline { font-size: 1.25em; margin: 0 0 32px; }
+  .muted { color: #6e6e73; }
+  .btn {
+    display: inline-block; padding: 12px 28px; border-radius: 10px;
+    background: #0071e3; color: #fff; text-decoration: none;
+    font-weight: 600; font-size: 1.05em;
+  }
+  .btn:hover { background: #0077ed; }
+  .sub { font-size: .85em; margin-top: 10px; }
+  .steps {
+    background: #f5f5f7; border-radius: 12px; padding: 20px 24px;
+    margin: 40px 0; font-size: .95em;
+  }
+  .steps ol { margin: 8px 0 0; padding-left: 20px; }
+  .steps li { margin: 6px 0; }
+  code {
+    background: #f5f5f7; padding: 2px 6px; border-radius: 5px;
+    font-size: .85em;
+  }
+  a { color: #0071e3; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  footer { margin-top: 56px; font-size: .85em; }
+  .lock { margin: 32px 0; padding-left: 16px; border-left: 3px solid #0071e3; }
+</style>
+</head>
+<body>
+  <h1>context</h1>
+  <p class="tagline">Your AI assistants don't know you. Your messages do.</p>
+
+  <p>context reads your own iMessage history and distills it into a profile
+  you review word-for-word, edit, and hand to Claude, ChatGPT, or Gemini —
+  so every assistant starts from who you actually are.</p>
+
+  <div class="lock">
+    <strong>Nothing leaves your Mac.</strong> Extraction and distillation both
+    run on-device — the AI doing the reading is a local model (Gemma, via
+    Ollama). The only artifact is the profile you approve.
+  </div>
+
+  <p>
+    <a class="btn" href="/ContextLayer-0.1.0.zip">Download for Mac</a><br>
+    <span class="sub muted">v0.1.0 · Apple&nbsp;Silicon · macOS&nbsp;14+ · free ·
+    <a href="https://github.com/niklio/context">source</a></span>
+  </p>
+
+  <div class="steps">
+    <strong>Install</strong>
+    <ol>
+      <li>Unzip, drag <strong>Context Layer</strong> to Applications, then
+          right-click&nbsp;→&nbsp;Open <span class="muted">(unsigned beta)</span>.</li>
+      <li>Install <a href="https://ollama.com">Ollama</a> if you don't have it —
+          the app handles the rest, including the one-time model download.</li>
+      <li>Grant Full Disk Access when the app walks you through it
+          <span class="muted">(that's how it reads Messages; macOS doesn't
+          allow a normal permission prompt)</span>.</li>
+      <li>Click <strong>Build my profile</strong>, review, and inject.</li>
+    </ol>
+  </div>
+
+  <footer class="muted">
+    Built by <a href="https://nikliolios.com">Nik Liolios</a> ·
+    <a href="https://github.com/niklio/context">GitHub</a>
+  </footer>
+</body>
+</html>
