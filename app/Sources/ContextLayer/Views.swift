@@ -51,6 +51,10 @@ struct MenuContent: View {
                 Button("Regenerate profile") { model.start() }
                     .disabled(model.stage == .building)
                 Divider()
+                Button("About Context") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.orderFrontStandardAboutPanel(nil)
+                }
                 Button("Quit Context") { NSApp.terminate(nil) }
             } label: {
                 Image(systemName: "gearshape")
