@@ -2,11 +2,12 @@
 // Sandboxed in the app's JavaScriptCore runtime: capabilities are host.* (local
 // corpus), llm.* (local model), ui.* (progress), log().
 //
-// v9: split evidence passes (relationship vs persona+events), qualitative-only
-// cards with a fixed viewpoint, roster scored by volume×recency with evidence
-// gates, deterministic role hints (surname, contact decorations, owner name),
-// business lexicon, lenient event dates. Numbers live in code, never in prose.
-const HARNESS_VERSION = 12;
+// v13: time-stratified evidence for long threads (recency bias killed early
+// facts like the owner's own wedding), significance-gated events (timelines
+// were 120 lines of appointment reshuffling), per-section persona synthesis
+// (grouped calls silently dropped whole sections), hedging ban, partner-surname
+// in-law hints, discriminating-signal prompts with a hard parse cap.
+const HARNESS_VERSION = 13;
 
 const CAPS = {
   persons: 18,
@@ -15,11 +16,17 @@ const CAPS = {
   relationshipChars: 8000,
   personaChars: 12000,
   evidenceChars: 900,
-  obsPerTag: 40,
+  obsPerTag: 60,
   timelineBatchChars: 9000,
   parallel: 4,
   minSignalsForCard: 2,
   roleBatch: 12,
+  signalsPerPass: 16,
+  timelineMax: 100,
+  // Long-running threads get a second, early-era evidence pass: transcripts
+  // are served most-recent-first, so a single pass never sees the first year.
+  eraSplitDays: 300,
+  eraSplitMessages: 250,
 };
 
 const OWNER = (typeof __owner !== "undefined") ? JSON.parse(__owner()) : { name: "" };
@@ -223,7 +230,7 @@ function statFact(c) {
   return opts.length ? opts[c.id % opts.length] : null;
 }
 
-function roleHints(c) {
+function roleHints(c, partnerLast) {
   const hints = [];
   const ownerLast = (OWNER.name || "").trim().split(/\s+/).pop() || "";
   if (ownerLast.length > 2 &&
@@ -233,8 +240,29 @@ function roleHints(c) {
   if (/[❤♥\u{1F495}-\u{1F49F}\u{1FA77}]/u.test(c.name)) {
     hints.push("saved in your contacts with hearts — strong partner signal");
   }
+  if (partnerLast && partnerLast.length > 2 && !/[❤♥]/u.test(c.name) &&
+      normalizeName(c.name).toLowerCase().split(/\s+/).pop() === partnerLast.toLowerCase()) {
+    hints.push("shares your partner's last name — likely partner's family (in-law)");
+  }
   if (c.stats.perWeek >= 60) hints.push("one of your highest-frequency contacts");
   return hints;
+}
+
+// Long threads get two evidence passes (early era + recent era): transcripts
+// are served most-recent-first, so one pass never sees the first year — the
+// baseline profile missed the owner's own wedding this way.
+const MONTH_IDX = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+                    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+function eraPasses(c, chars) {
+  const m = String(c.period || "").match(/^([A-Z][a-z]{2}) (\d{4})\s*[–-]\s*([A-Z][a-z]{2}) (\d{4})$/);
+  if (!m || (c.stats.spanDays || 0) < CAPS.eraSplitDays ||
+      c.messageCount < CAPS.eraSplitMessages) {
+    return [{ maxChars: chars }];
+  }
+  const start = Date.UTC(+m[2], MONTH_IDX[m[1]] || 0, 1);
+  const end = Date.UTC(+m[4], MONTH_IDX[m[3]] || 0, 28);
+  const mid = new Date((start + end) / 2).toISOString().slice(0, 10);
+  return [{ maxChars: chars, toDate: mid }, { maxChars: chars, fromDate: mid }];
 }
 
 // ---------------------------------------------------------------- prompts
@@ -254,7 +282,9 @@ Conversation with ${normalizeName(chat.name)}${chat.isGroup ? " (group chat)" : 
 SIGNAL: <one concrete piece of evidence: how we address each other ("mom", "babe", pet names), topics we discuss (wedding planning, kids' schedules, work projects, training runs), events we've shared (dinners, trips, races), emotional register (venting, jokes, advice), logistics we coordinate (same home, family gatherings)>
 HYPOTHESIS: <a possible relationship role from: ${TAXONOMY}> — <the evidence for it> (several allowed; uncertainty fine)
 
-FORMAT (strict): every single line of your output must begin with "SIGNAL: " or "HYPOTHESIS: ". No introductions, no headers, no numbering, no markdown, no commentary. Aim for 5-12 SIGNAL lines and 1-3 HYPOTHESIS lines. Quote short phrases as evidence where helpful.
+Every SIGNAL must be a SPECIFIC fact that only a reader of this thread would know — include the names, places, dates, or short quotes that make it specific. NEVER write generic conversational mechanics ("coordinated timing", "confirmed attendance", "offered to join", "discussed scheduling") — those describe every conversation on earth and are worthless.
+
+FORMAT (strict): every single line of your output must begin with "SIGNAL: " or "HYPOTHESIS: ". No introductions, no headers, no numbering, no markdown, no commentary. Aim for 5-12 SIGNAL lines and 1-3 HYPOTHESIS lines.
 
 TRANSCRIPT:
 ${transcript}`;
@@ -273,7 +303,7 @@ OBS: <TAG> | <explicit or inferred> | <complete sentence about Me>
 Tags: ABOUT (name, job, employer, city, life stage), COMM (how I write here), WORK, INTERESTS, HEALTH, DAILY, DATES (upcoming), VALUES, ASSIST (what I ask for help with).
 
 EVENT: <date> | <what happened> | <explicit or inferred>
-Events are things that HAPPENED in my life: meetups, dinners, trips, races, moves, milestones, weddings, job changes — small or big. Date them from the [YYYY-MM-DD] message timestamps ("yesterday"/"last Saturday" resolve relative to that message's date). Use YYYY-MM-DD when known, else YYYY-MM, else YYYY.
+Events are SIGNIFICANT things that happened in my life: trips, races, moves, weddings, engagements, pregnancy/births, job changes, promotions, surgeries and injuries, major purchases, milestones, parties I hosted. NEVER output as events: appointments, reschedules, cancellations, haircuts, deliveries, reservations, routine dinners/workouts/meetups, or plans that never happened — scheduling noise is worthless. Date them from the [YYYY-MM-DD] message timestamps ("yesterday"/"last Saturday" resolve relative to that message's date). Use YYYY-MM-DD when known, else YYYY-MM, else YYYY.
 
 FORMAT (strict): every single line of your output must begin with "OBS: " or "EVENT: ". No introductions, no headers, no numbering, no markdown, no commentary. Specifics beat generalities.
 
@@ -290,6 +320,7 @@ Rules:
 - Prefer "unclear" over guessing when evidence is thin.
 - Combine evidence: pet names + shared home + hearts in contact name → Partner or Spouse; Spouse only with marriage evidence.
 - Deterministic hints (surnames, contact-name decorations) are strong evidence.
+- Someone sharing my PARTNER's surname is the partner's family — In-law — not my own parent/sibling.
 - Comparative calls are allowed HERE only: you may mark ONE person "closest friend" in the note if the whole picture clearly supports it; if several are close, note "one of my closest friends" instead.
 
 Output exactly one line per person:
@@ -299,7 +330,7 @@ ${entries}`;
 }
 
 const SECTION_GUIDANCE = {
-  ABOUT: "Triangulate identity: name from how people address me, job/city corroborated across conversations. Resolve contradictions by recency and say so ('moved from X to Y').",
+  ABOUT: "Triangulate identity: name from how people address me, job/city corroborated across conversations. Resolve contradictions by recency and say so ('moved from X to Y'). Assert what the evidence shows — never 'you appear to be'.",
   COMM: "Compare my style ACROSS audiences using the role graph — describe register shifts (partner vs colleagues vs friends), not one thread's tone.",
   WORK: "Separate corroborated facts (employer, role) from ambitions and side projects.",
   INTERESTS: "Tier: core interests (many conversations, long span, recent) vs current phase vs historical. Weigh breadth of audiences.",
@@ -318,7 +349,9 @@ function personaPrompt(tags, roleGraph, observations) {
   const body = tags
     .filter((t) => byTag[t] && byTag[t].length)
     .map((t) => {
-      const capped = byTag[t].slice(-CAPS.obsPerTag);
+      const pool = byTag[t];
+      const capped = pool.filter((o) => o.explicit)
+        .concat(pool.filter((o) => !o.explicit)).slice(0, CAPS.obsPerTag);
       return `${t} observations:\n` + capped.map(
         (o) => `- [${o.source}, ${o.explicit ? "explicit" : "inferred"}] ${o.text}`).join("\n");
     }).join("\n\n");
@@ -332,13 +365,16 @@ ${tags.map((t) => `• ${t} — ${SECTION_GUIDANCE[t] || ""}`).join("\n")}
 
 Write final profile bullets addressed to me in the second person ("You…"), each a complete sentence, in the form \`TAG: bullet\`. Facts seen across several conversations are load-bearing; one-off inferred items are droppable. A tag with too little evidence gets NO lines — never pad. Output ONLY conclusion lines.
 
+State facts with CONFIDENCE — never "you appear to", "likely", "probably", "seems": if the evidence doesn't support asserting it plainly, omit it entirely. Prefer concrete specifics — names, places, dates, employers, race results (numbers ARE allowed here) — over vague generalities; "You ran the NYC Marathon in November 2024" beats "You are into running".
+
 ${body}`;
 }
 
 function timelinePrompt(mentionList) {
   return `Below are mentions of real-world events from my life, gathered from different conversations, sorted by date. Merge into a clean chronological timeline:
 - Mentions of the SAME event become ONE entry; if it appeared in 2+ distinct conversations, append " (corroborated in N conversations)".
-- Keep small events (a breakfast, a ride) AND big ones (weddings, moves, job changes). Drop non-events and unresolved plans.
+- Similar-sounding logistics from DIFFERENT conversations are DIFFERENT events — merge only when they clearly describe the same real-world occurrence.
+- Favor significant events (weddings, moves, trips, races, job changes, health events, milestones). Drop non-events, unresolved plans, and all scheduling noise (appointments, reschedules, deliveries, reservations).
 - One line per event: \`<date> — <event>\`, chronological. Output AT MOST one line per input mention — merging only shrinks the list, never grows it. Never invent events. Nothing else.
 
 ${mentionList}`;
@@ -418,7 +454,12 @@ function distill() {
 
   const relJobs = [...persons, ...groups];
   const personaJobs = [...persons, ...groups, ...businesses];
-  const totalUnits = relJobs.length + personaJobs.length + relJobs.length + 8;
+  const relPasses = relJobs.flatMap(
+    (c) => eraPasses(c, CAPS.relationshipChars).map((opts) => ({ c, opts })));
+  const personaPasses = personaJobs.flatMap(
+    (c) => eraPasses(c, CAPS.personaChars).map((opts) => ({ c, opts })));
+  log(`era split: ${relPasses.length} rel passes, ${personaPasses.length} persona passes`);
+  const totalUnits = relPasses.length + personaPasses.length + relJobs.length + 8;
   let completed = 0;
   const bump = () => ui.progress(++completed, totalUnits);
 
@@ -444,20 +485,22 @@ function distill() {
   // ---- Stage 1a: relationship evidence (focused pass) ---------------------
   ui.status("Mapping your relationships…");
   const evidenceByName = {};
-  for (let i = 0; i < relJobs.length; i += CAPS.parallel) {
-    const batch = relJobs.slice(i, i + CAPS.parallel);
+  for (let i = 0; i < relPasses.length; i += CAPS.parallel) {
+    const batch = relPasses.slice(i, i + CAPS.parallel);
     if (!llmFactsStarted) {
-      const c = batch.find((x) => statFact(x));
-      if (c) ui.fact(statFact(c));
+      const p = batch.find((x) => statFact(x.c));
+      if (p) ui.fact(statFact(p.c));
     }
-    const outs = genParallel(batch.map((c) => relationshipEvidencePrompt(
-      c, host.transcript(c.id, { maxChars: CAPS.relationshipChars }))), null, CAPS.parallel);
+    const outs = genParallel(batch.map((p) => relationshipEvidencePrompt(
+      p.c, host.transcript(p.c.id, p.opts))), null, CAPS.parallel);
     let batchSignals = 0;
-    batch.forEach((c, j) => {
-      const { signals } = parseEvidence(outs[j] || "", normalizeName(c.name));
-      evidenceByName[normalizeName(c.name)] = signals;
-      batchSignals += signals.length;
-      signals.filter((s) => !s.startsWith("hypothesis")).slice(0, 2)
+    batch.forEach((p, j) => {
+      const name = normalizeName(p.c.name);
+      const { signals } = parseEvidence(outs[j] || "", name);
+      const kept = signals.slice(0, CAPS.signalsPerPass);
+      evidenceByName[name] = (evidenceByName[name] || []).concat(kept);
+      batchSignals += kept.length;
+      kept.filter((s) => !s.startsWith("hypothesis")).slice(0, 2)
         .forEach((s) => llmFact(s));
       bump();
     });
@@ -468,12 +511,12 @@ function distill() {
 
   // ---- Stage 1b: persona observations + events ----------------------------
   ui.status("Learning who you are…");
-  for (let i = 0; i < personaJobs.length; i += CAPS.parallel) {
-    const batch = personaJobs.slice(i, i + CAPS.parallel);
-    const outs = genParallel(batch.map((c) => personaEventsPrompt(
-      c, host.transcript(c.id, { maxChars: CAPS.personaChars }))), null, CAPS.parallel);
+  for (let i = 0; i < personaPasses.length; i += CAPS.parallel) {
+    const batch = personaPasses.slice(i, i + CAPS.parallel);
+    const outs = genParallel(batch.map((p) => personaEventsPrompt(
+      p.c, host.transcript(p.c.id, p.opts))), null, CAPS.parallel);
     let batchObs = 0, batchEvents = 0;
-    batch.forEach((c, j) => {
+    batch.forEach(({ c }, j) => {
       const { obs, events } = parseEvidence(outs[j] || "", normalizeName(c.name));
       observations.push(...obs);
       eventMentions.push(...events);
@@ -498,11 +541,14 @@ function distill() {
   // ---- Stage 3: relationship synthesis (sees everyone, batched) -----------
   ui.status("Figuring out who's who…");
   const assignments = {};
+  const heartsChat = persons.find((c) => /[❤♥\u{1F495}-\u{1F49F}\u{1FA77}]/u.test(c.name));
+  const partnerLast = heartsChat
+    ? (normalizeName(heartsChat.name).trim().split(/\s+/).pop() || "") : "";
   for (let i = 0; i < persons.length; i += CAPS.roleBatch) {
     const slice = persons.slice(i, i + CAPS.roleBatch);
     const entries = slice.map((c) => {
       const name = normalizeName(c.name);
-      const hints = roleHints(c);
+      const hints = roleHints(c, partnerLast);
       const ev = (evidenceByName[name] || []).join("; ").slice(0, CAPS.evidenceChars);
       return `== ${name}\n${c.stats.tableRow}${hints.length ? "\nHINTS: " + hints.join("; ") : ""}${ev ? "\nEvidence: " + ev : ""}`;
     }).join("\n");
@@ -539,26 +585,53 @@ function distill() {
   // ---- Stage 4a: persona synthesis ----------------------------------------
   ui.status("Piecing together who you are…");
   const sectionBullets = {};
-  const sectionGroups = [["ABOUT", "COMM", "WORK"],
-                         ["INTERESTS", "HEALTH", "DAILY"],
-                         ["DATES", "VALUES", "ASSIST"]];
+  // One call per section: grouped calls silently starved whole sections when
+  // the model spent its budget on the first tag of the group.
+  const sectionTags = SECTIONS.map((s) => s[0]);
   const personaOuts = genParallel(
-    sectionGroups.map((tags) => personaPrompt(tags, roleGraph, observations)),
-    "synthesis", 3);
-  sectionGroups.forEach((tags, i) => {
-    for (const [tag, bullet] of parseTagged(personaOuts[i] || "", new Set(tags))) {
-      (sectionBullets[tag] = sectionBullets[tag] || []).push(bullet);
+    sectionTags.map((tag) => personaPrompt([tag], roleGraph, observations)),
+    "synthesis", CAPS.parallel);
+  sectionTags.forEach((tag, i) => {
+    const out = personaOuts[i] || "";
+    let got = 0;
+    for (const [t, bullet] of parseTagged(out, new Set([tag]))) {
+      (sectionBullets[t] = sectionBullets[t] || []).push(bullet);
+      got++;
     }
-    bump();
+    if (!got) {
+      // Single-section calls sometimes drop the TAG: prefix — salvage bullets.
+      for (let line of out.split("\n")) {
+        line = line.trim().replace(/^[-•*]\s+/, "").replace(/\*\*/g, "");
+        if (line.length > 30 && /^[A-Z"“'(y]/i.test(line) && !isTemplate(line) &&
+            !isFiller(line) && got < 8) {
+          (sectionBullets[tag] = sectionBullets[tag] || []).push(line);
+          got++;
+        }
+      }
+    }
+    if (i % 3 === 2) bump();
   });
+  log(`persona sections: ${sectionTags.map((t) => `${t}=${(sectionBullets[t] || []).length}`).join(" ")}`);
 
   // ---- Stage 4t: timeline ---------------------------------------------------
   ui.status("Reconstructing your timeline…");
   const timeline = [];
   const seenMention = new Set();
-  const banal = /\b(test|sent (a |an )?(message|text|email)|reacted|replied|responded|group chat|checked in)\b/i;
+  // The baseline timeline was 120 lines of appointment reshuffling: kill
+  // scheduling noise at the mention level, and business-sourced mentions
+  // unless they carry a real life signal (a flight is a trip; a reschedule
+  // is nothing).
+  const banal = new RegExp(
+    "\\b(test|sent (a |an )?(message|text|email)|reacted|replied|responded|" +
+    "group chat|checked in|reschedul\\w*|appointment|cancell\\w*|haircut|stylist|" +
+    "delivery|delivered|reservation|booking|booked a table|time slot|" +
+    "confirm(ed|ation)s? (the |an? )?(appointment|reservation|booking|time|order)|" +
+    "provided directions|requested? (a )?(reschedule|change))\\b", "i");
+  const bizNames = new Set(businesses.map((c) => normalizeName(c.name)));
+  const bizWorthy = /flight|flew|fly|airport|trip|travel|hotel|stay|airbnb|rental car|purchas|bought|order(ed)? (a|the) [a-z]+ (bike|ring|suit|tux)|moved?|race|wedding|honeymoon|surgery|fitting/i;
   const deduped = eventMentions.filter((m) => {
     if (banal.test(m.text)) return false;
+    if (bizNames.has(m.source) && !bizWorthy.test(m.text)) return false;
     const k = m.date + "|" + m.text.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 60);
     if (seenMention.has(k)) return false;
     seenMention.add(k);
@@ -592,11 +665,12 @@ function distill() {
     seenEntry.add(k);
     return true;
   });
-  if (finalTimeline.length > 120) {
+  const SIG = /wedding|married|marriage|honeymoon|engag|pregnan|baby|born|birth|moved|new (apartment|home|job|team|role)|promot|hired|quit|started (a |the )?(job|role|new)|marathon|ironman|triathlon|70\.3|half.iron|race|\bPR\b|surgery|hospital|injur|trip|travel|flew|vacation|visited|graduat|launch|anniversar|birthday/i;
+  if (finalTimeline.length > CAPS.timelineMax) {
     const scored = finalTimeline.map((e, i) => ({ e, i,
-      s: (/corroborated/.test(e) ? 2 : 0) + Math.min(e.length / 60, 1) }));
+      s: (SIG.test(e) ? 4 : 0) + (/corroborated/.test(e) ? 2 : 0) + Math.min(e.length / 60, 1) }));
     scored.sort((a, b) => b.s - a.s);
-    const keep = new Set(scored.slice(0, 120).map((x) => x.i));
+    const keep = new Set(scored.slice(0, CAPS.timelineMax).map((x) => x.i));
     finalTimeline = finalTimeline.filter((_, i) => keep.has(i));
   }
   timeline.length = 0; timeline.push(...finalTimeline);
