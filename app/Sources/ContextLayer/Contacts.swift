@@ -8,7 +8,9 @@ enum Contacts {
     static func nameMap() -> [String: String] {
         var map: [String: String] = [:]
         let fm = FileManager.default
-        let abRoot = NSHomeDirectory() + "/Library/Application Support/AddressBook"
+        // CL_ADDRESSBOOK: eval runs point this at a copied contacts store.
+        let abRoot = ProcessInfo.processInfo.environment["CL_ADDRESSBOOK"]
+            ?? NSHomeDirectory() + "/Library/Application Support/AddressBook"
         var dbs = [abRoot + "/AddressBook-v22.abcddb"]
         if let sources = try? fm.contentsOfDirectory(atPath: abRoot + "/Sources") {
             dbs += sources.map { abRoot + "/Sources/\($0)/AddressBook-v22.abcddb" }

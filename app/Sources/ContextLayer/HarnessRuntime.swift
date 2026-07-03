@@ -110,7 +110,9 @@ enum HarnessRuntime {
         }
         let headlines: @convention(block) () -> String = { corpus.headlinesJSON }
         let owner: @convention(block) () -> String = {
-            let name = NSFullUserName()
+            // CL_OWNER: eval runs on another machine aren't the profile's
+            // subject — the account's full name would poison the role hints.
+            let name = ProcessInfo.processInfo.environment["CL_OWNER"] ?? NSFullUserName()
             let data = (try? JSONSerialization.data(withJSONObject: ["name": name])) ?? Data("{}".utf8)
             return String(decoding: data, as: UTF8.self)
         }
