@@ -457,7 +457,38 @@ final class AppModel: ObservableObject {
         guard (resp as? HTTPURLResponse)?.statusCode == 200,
               let ack = try? JSONDecoder().decode(Ack.self, from: data), ack.ok
         else { throw URLError(.badServerResponse) }
+        await uploadTrajectory(reportID: ack.id)
         return ack.id
+    }
+
+    /// Best-effort companion to a report: the full local-model trajectory
+    /// (every prompt + response), gzipped. A failure here never blocks the
+    /// report itself — harness.log alone is still worth having.
+    private func uploadTrajectory(reportID: String) async {
+        let gzData: Data? = await Task.detached(priority: .utility) {
+            let combined = Trajectory.combinedForUpload()
+            guard !combined.isEmpty else { return nil }
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("trajectory-\(reportID).jsonl")
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            do {
+                try combined.write(to: tmp)
+                let gzip = Process()
+                gzip.executableURL = URL(fileURLWithPath: "/usr/bin/gzip")
+                gzip.arguments = ["-f", tmp.path]
+                try gzip.run()
+                gzip.waitUntilExit()
+                let gz = tmp.appendingPathExtension("gz")
+                defer { try? FileManager.default.removeItem(at: gz) }
+                return try Data(contentsOf: gz)
+            } catch { return nil }
+        }.value
+        guard let body = gzData, body.count < 50_000_000 else { return }
+        var req = URLRequest(url: URL(
+            string: "\(Self.apiBase)/api/reports/\(reportID)/trajectory")!)
+        req.httpMethod = "POST"
+        req.setValue("application/gzip", forHTTPHeaderField: "Content-Type")
+        _ = try? await URLSession.shared.upload(for: req, from: body)
     }
 
     func reportFailure() {
@@ -476,7 +507,7 @@ final class AppModel: ObservableObject {
             do {
                 let id = try await postReport(trigger: "manual")
                 alert.messageText = "Logs uploaded"
-                alert.informativeText = "Reference \(id.suffix(6)). Only diagnostics were sent — never your messages or profile."
+                alert.informativeText = "Reference \(id.suffix(6)). Sent: diagnostics plus the local model's full prompts and outputs from this run — those prompts include excerpts of your messages. Logs only ever leave your Mac when you choose this."
             } catch {
                 alert.messageText = "Upload failed"
                 alert.informativeText = "Couldn't reach the server. Try again in a bit."

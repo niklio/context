@@ -83,8 +83,23 @@ export default {
       return json({ ok: true });
     }
 
-    // Failure reports from the app: diagnostics only (error + harness.log +
-    // environment), never profile content. 30-day TTL, pulled via wrangler.
+    // Full local-model trajectory (gzipped JSONL of every prompt+response)
+    // accompanying a report. User-consented — prompts contain message
+    // excerpts. Too big for KV, so it lands in R2 next to the releases;
+    // only ids of existing reports are accepted.
+    const traj = url.pathname.match(/^\/api\/reports\/([\w-]{10,80})\/trajectory$/);
+    if (traj && request.method === "POST") {
+      if (!(await env.PROFILES.get("report:" + traj[1]))) {
+        return json({ error: "unknown report" }, 404);
+      }
+      const body = await request.arrayBuffer();
+      if (body.byteLength > 50_000_000) return json({ error: "too large" }, 413);
+      await env.RELEASES.put(`debug/${traj[1]}.jsonl.gz`, body);
+      return json({ ok: true });
+    }
+
+    // Failure reports from the app: error + harness.log + environment.
+    // 30-day TTL, pulled via wrangler.
     if (url.pathname === "/api/reports" && request.method === "POST") {
       let body;
       try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }

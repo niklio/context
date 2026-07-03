@@ -201,6 +201,23 @@ struct OllamaClient {
 
     private static func generateRaw(prompt: String, modelName: String,
                                     numPredict: Int?) async throws -> String {
+        let start = Date()
+        func elapsed() -> Int { Int(Date().timeIntervalSince(start) * 1000) }
+        do {
+            let out = try await generateRawInner(prompt: prompt, modelName: modelName,
+                                                 numPredict: numPredict)
+            Trajectory.record(model: modelName, prompt: prompt,
+                              response: out, error: nil, ms: elapsed())
+            return out
+        } catch {
+            Trajectory.record(model: modelName, prompt: prompt, response: nil,
+                              error: error.localizedDescription, ms: elapsed())
+            throw error
+        }
+    }
+
+    private static func generateRawInner(prompt: String, modelName: String,
+                                         numPredict: Int?) async throws -> String {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/generate"))
         req.httpMethod = "POST"
         var options: [String: Any] = ["num_ctx": 16384, "temperature": 0.3]
@@ -228,6 +245,7 @@ struct OllamaClient {
 enum Distiller {
     static func run(_ result: ExtractionResult, stats: CorpusStats,
                     progress: @escaping @Sendable (DistillProgress) -> Void) async throws -> String {
+        Trajectory.rotate()
         try await OllamaClient.ensureServer()
         if !(try await OllamaClient.hasModel()) {
             try await OllamaClient.pullModel { done, total in
