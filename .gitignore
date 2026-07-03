@@ -7,3 +7,4 @@ app/build/
 *.zip
 .DS_Store
 vendor/
+eval/corpus/
