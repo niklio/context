@@ -6,7 +6,7 @@
 // cards with a fixed viewpoint, roster scored by volume×recency with evidence
 // gates, deterministic role hints (surname, contact decorations, owner name),
 // business lexicon, lenient event dates. Numbers live in code, never in prose.
-const HARNESS_VERSION = 11;
+const HARNESS_VERSION = 12;
 
 const CAPS = {
   persons: 18,

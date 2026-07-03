@@ -15,6 +15,16 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // The harness and appcast must NEVER be cached — hot-reload depends on
+    // every fetch seeing the latest deploy (edge-cached assets served v10 to
+    // a user an hour after v11 shipped).
+    if (url.pathname === "/harness.js" || url.pathname === "/appcast.xml") {
+      const resp = await env.ASSETS.fetch(request);
+      const fresh = new Response(resp.body, resp);
+      fresh.headers.set("cache-control", "no-store, must-revalidate");
+      return fresh;
+    }
+
     // Releases live in R2 (too big for static assets).
     const rel = url.pathname.match(/^\/((?:ContextLayer|Context)-[\w.]+\.(zip|dmg))$/);
     if (rel) {
